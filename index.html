@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=1">
+<title>写作库 · 6.4 同步版</title>
+<meta name="description" content="写作库 6.4 · 双数据库离线版：文库、思维导图、沉浸写作与编辑保存都在浏览器里，不依赖本地服务。">
+<meta name="theme-color" content="#F7F7F4">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="写作库">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="stylesheet" href="css/base.css">
+<link rel="stylesheet" href="css/themes.css">
+<link rel="stylesheet" href="css/library.css">
+<link rel="stylesheet" href="css/writer.css">
+<link rel="stylesheet" href="css/gen6.css">
+<link rel="stylesheet" href="css/hub.css">
+<link rel="stylesheet" href="css/db.css">
+<link rel="stylesheet" href="css/focus-cursor.css">
+<link rel="stylesheet" href="css/dashboard.css">
+</head>
+<body>
+
+<!-- ============ 文库 ============ -->
+<div class="app lib-app" id="libApp">
+  <header class="topbar" id="libTop">
+    <button class="icon-btn only-mobile" id="btnDrawer" aria-label="目录">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h10"/></svg>
+    </button>
+    <a class="brand" href="#/" aria-label="写作库首页">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 32 32" fill="none"><path d="M9 24V9.5A2.5 2.5 0 0 1 11.5 7H23v15.5" stroke="currentColor" stroke-width="1.6"/><path d="M9 24a2.5 2.5 0 0 0 2.5 2.5H23" stroke="currentColor" stroke-width="1.6"/><path d="M13.5 12h5.5M13.5 16h5.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      </span>
+      <span class="brand-text">写作库<span class="brand-sub">STUDIO</span></span>
+    </a>
+    <button class="search-trigger" id="btnSearch" aria-label="搜索">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
+      <span class="st-label">搜索标题、摘要、正文</span>
+      <kbd class="only-desktop">⌘ K</kbd>
+    </button>
+    <div class="top-actions">
+      <button class="tb-btn only-desktop" id="btnDraft">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+        速写
+      </button>
+      <button class="tb-btn primary" id="btnWrite">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5V6a2 2 0 0 1 2-2h9l5 5v10.5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z"/><path d="M14 4v6h6"/></svg>
+        写作台
+      </button>
+      <button class="icon-btn" id="btnTheme" aria-label="切换主题"></button>
+      <button class="icon-btn only-desktop" id="btnLibMore" aria-label="更多">
+        <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="lib-body">
+    <aside class="sidebar" id="sidebar">
+      <div class="side-scroll" id="sideScroll"></div>
+    </aside>
+    <div class="drawer-mask" id="drawerMask"></div>
+    <main class="lib-main" id="libMain">
+      <div class="read-progress" id="readProgress"><i></i></div>
+      <div class="lib-view" id="libView" tabindex="-1"></div>
+    </main>
+  </div>
+
+  <button class="lib-fab" id="btnDraftMobile" aria-label="快速起草">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+  </button>
+
+  <nav class="mobile-nav" id="libNav">
+    <a data-nav="home" class="mn-item active"><span class="mn-ico"></span><span>文库</span></a>
+    <a data-nav="drafts" class="mn-item"><span class="mn-ico"></span><span>草稿</span></a>
+    <a data-nav="plugins" class="mn-item"><span class="mn-ico"></span><span>插件</span></a>
+    <a data-nav="settings" class="mn-item"><span class="mn-ico"></span><span>设置</span></a>
+  </nav>
+</div>
+
+<!-- ============ 写作台 ============ -->
+<div class="app writer-app" id="writerApp" hidden>
+  <header class="wtop">
+    <div class="wtop-left">
+      <button class="icon-btn" id="btnBackLib" aria-label="返回文库">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>
+      </button>
+      <button class="book-switch" id="btnBookSwitch">
+        <span class="bs-dot"></span>
+        <span class="bs-name" id="bookName">未命名作品</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg>
+      </button>
+      <span class="w-words" id="wWords">0 字</span>
+    </div>
+    <nav class="view-tabs" id="viewTabs">
+      <button data-view="outline" class="active">大纲</button>
+      <button data-view="timeline">时间线</button>
+      <button data-view="editor">写作</button>
+      <button data-view="assembly">拼装</button>
+      <button data-view="settings">设定</button>
+    </nav>
+    <div class="wtop-right">
+      <button class="icon-btn" id="btnPanels" title="收起/展开面板">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M9 4.5v15M15 4.5v15"/></svg>
+      </button>
+      <button class="tb-btn" id="btnDraftW">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+        速写
+      </button>
+      <button class="icon-btn" id="btnThemeW" aria-label="切换主题"></button>
+      <button class="icon-btn" id="btnWMore" aria-label="更多">
+        <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="wbody" id="wBody">
+    <aside class="wpanel w-left" id="wLeft">
+      <div class="wp-head">
+        <div class="wp-tabs" id="wpTabs">
+          <button data-panel="outline" class="active">大纲</button>
+          <button data-panel="library">目录</button>
+          <button data-panel="ideas">灵感</button>
+        </div>
+        <button class="icon-btn sm" id="btnCollapseLeft" title="收起面板">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="m14 6-6 6 6 6"/></svg>
+        </button>
+      </div>
+      <div class="wp-body" id="wLeftBody"></div>
+      <div class="wp-foot">
+        <button class="wp-add" id="btnAddRoot">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+          新建卷
+        </button>
+      </div>
+    </aside>
+    <button class="panel-handle left" id="handleLeft" aria-label="展开大纲面板"></button>
+
+    <section class="wstage" id="wStage">
+      <div class="wview" id="wView"></div>
+    </section>
+
+    <button class="panel-handle right" id="handleRight" aria-label="展开属性面板"></button>
+    <aside class="wpanel w-right" id="wRight">
+      <div class="wp-head">
+        <button class="icon-btn sm" id="btnCollapseRight" title="收起面板">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="m10 6 6 6-6 6"/></svg>
+        </button>
+        <span class="wp-title" id="wRightTitle">属性</span>
+      </div>
+      <div class="wp-body" id="wRightBody"></div>
+    </aside>
+  </div>
+
+  <nav class="mobile-nav wnav" id="wNav">
+    <button data-wview="outline" class="mn-item active"><span class="mn-ico"></span><span>大纲</span></button>
+    <button data-wview="timeline" class="mn-item"><span class="mn-ico"></span><span>时间线</span></button>
+    <button data-wview="editor" class="mn-item"><span class="mn-ico"></span><span>写作</span></button>
+    <button data-wview="assembly" class="mn-item"><span class="mn-ico"></span><span>拼装</span></button>
+    <button data-wview="settings" class="mn-item"><span class="mn-ico"></span><span>设定</span></button>
+  </nav>
+</div>
+
+<!-- ============ 沉浸写作 ============ -->
+<div class="imm" id="immApp" hidden>
+  <header class="imm-top" id="immTop">
+    <div class="imm-top-left">
+      <button class="icon-btn" id="immBack" title="返回">←</button>
+      <div class="imm-loc" id="immLoc">新文章</div>
+    </div>
+    <div class="imm-top-actions">
+      <button class="imm-btn" data-imm="files" title="文章目录">目录</button>
+      <button class="imm-btn" data-imm="meta" title="分类、标签、状态">设定</button>
+      <button class="imm-btn" data-imm="focus" title="隐藏一切，只留文字">专注</button>
+      <button class="imm-btn" data-imm="type" title="让光标停在视线中间">打字机</button>
+      <button class="imm-btn" data-imm="map" title="在思维导图里定位">导图</button>
+      <button class="imm-btn" data-imm="read" title="用文库排版阅读">阅读</button>
+      <button class="icon-btn" id="immMore" title="更多">···</button>
+    </div>
+  </header>
+
+  <div class="imm-newbar" id="immNewbar" hidden>
+    <span class="inb-label">新文章存到</span>
+    <select id="immDb" aria-label="数据库"></select>
+    <select id="immType" aria-label="类型"></select>
+    <input id="immGroup" list="immGroupList" placeholder="分类 / 作品" autocomplete="off">
+    <span class="inb-slash">/</span>
+    <input id="immSub" list="immSubList" placeholder="子类 / 卷" autocomplete="off">
+    <datalist id="immGroupList"></datalist>
+    <datalist id="immSubList"></datalist>
+    <span class="inb-hint">输入标题或正文后自动创建 md</span>
+  </div>
+
+  <main class="imm-stage" id="immStage">
+    <div class="imm-page">
+      <div class="imm-crumb" id="immCrumb"></div>
+      <textarea class="imm-title" id="immTitle" rows="1" placeholder="无题" spellcheck="false"></textarea>
+      <div class="imm-meta" id="immMeta"></div>
+      <div class="imm-body" id="immBody" contenteditable="true" spellcheck="false" data-placeholder="从这里开始写。第一行是标题，下面是正文。"></div>
+    </div>
+  </main>
+
+  <footer class="imm-foot" id="immFoot">
+    <div class="imm-path" id="immPath">尚未保存 · 输入后自动建立文件</div>
+    <div class="imm-foot-right">
+      <span id="immCount">0 字</span>
+      <span id="immState">未保存</span>
+    </div>
+  </footer>
+
+  <aside class="imm-drawer" id="immDrawer" hidden>
+    <div class="imm-drawer-head">
+      <b>文章目录</b>
+      <span class="grow"></span>
+      <button class="imm-mini" id="immNewDoc">新建</button>
+      <button class="icon-btn sm" id="immDrawerClose" aria-label="关闭">✕</button>
+    </div>
+    <div class="imm-drawer-search">
+      <input id="immFind" placeholder="搜索标题…" autocomplete="off">
+    </div>
+    <div class="imm-drawer-list" id="immDrawerList"></div>
+  </aside>
+</div>
+
+<!-- ============ 浮层 ============ -->
+<div class="overlay" id="switcherOverlay" hidden>
+  <div class="palette" role="dialog" aria-label="快速切换">
+    <div class="palette-input">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
+      <input id="paletteInput" type="text" placeholder="搜索标题、类目、正文…" autocomplete="off" spellcheck="false">
+      <button class="icon-btn sm" id="paletteClose" aria-label="关闭">✕</button>
+    </div>
+    <div class="palette-list" id="paletteList"></div>
+    <div class="palette-foot">
+      <span><kbd>↑</kbd><kbd>↓</kbd> 选择</span>
+      <span><kbd>↵</kbd> 打开</span>
+      <span><kbd>esc</kbd> 关闭</span>
+      <span class="pf-count" id="paletteCount"></span>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="draftOverlay" hidden>
+  <div class="modal draft-modal" role="dialog" aria-label="速写">
+    <div class="modal-head">
+      <div>
+        <h3>速写</h3>
+        <p>随手写下，稍后在写作台整理</p>
+      </div>
+      <button class="icon-btn sm" data-close-draft aria-label="关闭">✕</button>
+    </div>
+    <div class="draft-body">
+      <div class="draft-title" id="draftTitle" contenteditable="true" data-placeholder="第一行会成为标题…"></div>
+      <div class="draft-text" id="draftText" contenteditable="true" data-placeholder="想到什么，就写什么。"></div>
+    </div>
+    <div class="modal-foot">
+      <span class="hint" id="draftWords">0 字</span>
+      <div class="foot-actions">
+        <button class="btn ghost" data-close-draft>取消</button>
+        <button class="btn primary" id="btnDraftSave">保存到随笔 <kbd>⌘↵</kbd></button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="modalOverlay" hidden>
+  <div class="modal" id="modalBox" role="dialog"></div>
+</div>
+
+<div class="menu" id="ctxMenu" hidden></div>
+<div class="menu" id="dropMenu" hidden></div>
+<div class="toast-wrap" id="toastWrap"></div>
+
+<div class="install-tip" id="installTip" hidden>
+  <div>
+    <b>把写作库装到手机桌面</b>
+    <p>浏览器菜单 →「添加到主屏幕」，即可全屏离线使用。</p>
+  </div>
+  <button class="icon-btn sm" id="installTipClose">✕</button>
+</div>
+
+<script src="data/library.js"></script>
+<script src="js/md.js"></script>
+<script src="js/github-api.js"></script>
+<script src="js/local-api.js"></script>
+<script src="js/util.js"></script>
+<script src="js/store.js"></script>
+<script src="js/workspace.js"></script>
+<script src="js/gen6-api.js"></script>
+<script src="js/theme-engine.js"></script>
+<script src="js/gen6-projects.js"></script>
+<script src="js/library.js"></script>
+<script src="js/hub.js"></script>
+<script src="js/doc-actions.js"></script>
+<script src="js/reader.js"></script>
+<script src="js/writer.js"></script>
+<script src="js/outline.js"></script>
+<script src="js/timeline.js"></script>
+<script src="js/editor.js"></script>
+<script src="js/assembly.js"></script>
+<script src="js/settings.js"></script>
+<script src="js/immersive.js"></script>
+<script src="js/focus-cursor.js"></script>
+<script src="js/dashboard.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

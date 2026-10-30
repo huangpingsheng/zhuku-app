@@ -1,0 +1,19 @@
+{
+  "name": "写作库 Studio 6.4 同步版",
+  "short_name": "写作库6.4",
+  "description": "两个数据库，一间书房：1,448 篇文稿装进一个不依赖本地服务的静态应用。",
+  "lang": "zh-CN",
+  "start_url": "./index.html#/",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "any",
+  "background_color": "#F6F6F3",
+  "theme_color": "#F6F6F3",
+  "categories": ["books", "productivity"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

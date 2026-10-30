@@ -1,0 +1,241 @@
+/* ============================================================
+   dashboard.css · 数据看台
+   ============================================================ */
+
+.dash{display:flex;flex-direction:column;gap:18px;padding-bottom:40px}
+
+/* ---------- hero ---------- */
+.dash-hero{
+  position:relative;overflow:hidden;
+  padding:26px 28px 22px;border:1px solid var(--line);border-radius:var(--r-xl);
+  background:
+    radial-gradient(120% 150% at 100% 0%,color-mix(in srgb,var(--accent) 9%,transparent) 0%,transparent 55%),
+    linear-gradient(180deg,var(--surface) 0%,var(--surface-2) 100%);
+}
+.dash-hero::after{
+  content:'';position:absolute;right:-60px;bottom:-110px;width:260px;height:260px;border-radius:50%;
+  border:1px solid color-mix(in srgb,var(--accent) 14%,transparent);pointer-events:none;
+}
+.dash-eyebrow{
+  font-family:var(--font-mono,ui-monospace,SFMono-Regular,Menlo,monospace);
+  font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-3);
+}
+.dash-hero-line{display:flex;align-items:flex-end;justify-content:space-between;gap:22px;flex-wrap:wrap;margin-top:10px}
+.dash-title{
+  font-family:var(--font-serif);font-size:clamp(30px,3.4vw,44px);font-weight:650;letter-spacing:-.02em;line-height:1.05;
+}
+.dash-title em{font-style:normal;color:var(--accent)}
+.dash-sub{margin-top:9px;max-width:640px;font-size:13px;line-height:1.75;color:var(--ink-2)}
+.dash-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.dash-live{
+  display:inline-flex;align-items:center;gap:7px;padding:7px 12px;border-radius:999px;
+  border:1px solid var(--line);background:var(--surface);font-size:11.5px;color:var(--ink-3);
+  font-variant-numeric:tabular-nums;
+}
+.dash-live i{width:7px;height:7px;border-radius:50%;background:var(--ink-3);opacity:.5}
+.dash-live.on{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 30%,var(--line))}
+.dash-live.on i{background:var(--ok);opacity:1;box-shadow:0 0 0 4px color-mix(in srgb,var(--ok) 16%,transparent);animation:dashPulse 2.4s ease-in-out infinite}
+@keyframes dashPulse{0%,100%{box-shadow:0 0 0 3px color-mix(in srgb,var(--ok) 14%,transparent)}50%{box-shadow:0 0 0 6px color-mix(in srgb,var(--ok) 6%,transparent)}}
+.dash-range{display:inline-flex;padding:3px;border:1px solid var(--line);border-radius:999px;background:var(--surface)}
+.dash-range button{
+  border:0;background:transparent;padding:5px 12px;border-radius:999px;
+  font-size:11.5px;color:var(--ink-3);cursor:pointer;transition:background var(--dur) var(--ease),color var(--dur) var(--ease);
+}
+.dash-range button:hover{color:var(--ink)}
+.dash-range button.on{background:var(--ink);color:var(--bg)}
+.dash-note{
+  display:flex;align-items:flex-start;gap:9px;margin-top:16px;padding:10px 13px;border-radius:var(--r-md);
+  border:1px dashed var(--line);background:color-mix(in srgb,var(--surface-2) 70%,transparent);
+  font-size:11.8px;color:var(--ink-3);line-height:1.7;
+}
+.dash-note svg{width:14px;height:14px;flex:0 0 auto;margin-top:2px}
+.dash-note p{margin:0}
+.dash-note b{color:var(--ink-2)}
+.dash-note.error{border-color:color-mix(in srgb,var(--danger) 32%,var(--line));color:var(--danger);background:color-mix(in srgb,var(--danger) 6%,transparent)}
+
+/* ---------- KPI ---------- */
+.dash-kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:11px;margin-top:16px}
+.dash-kpi{
+  position:relative;display:flex;flex-direction:column;gap:2px;
+  padding:15px 16px 13px;border:1px solid var(--line);border-radius:var(--r-lg);background:var(--surface);
+  min-height:104px;
+}
+.dash-kpi.loading{background:linear-gradient(90deg,var(--surface) 0%,var(--surface-2) 40%,var(--surface) 80%);background-size:200% 100%;animation:dashShimmer 1.4s linear infinite}
+@keyframes dashShimmer{to{background-position:-200% 0}}
+.dk-icon{
+  position:absolute;right:13px;top:13px;width:30px;height:30px;border-radius:9px;display:grid;place-items:center;
+  background:var(--accent-soft);color:var(--accent);
+}
+.dk-icon svg{width:16px;height:16px}
+.dk-label{font-size:11.5px;color:var(--ink-3);letter-spacing:.02em}
+.dk-value{font-family:var(--font-serif);font-size:26px;font-weight:650;line-height:1.25;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.dk-value em{font-style:normal;font-family:var(--font-sans,inherit);font-size:11px;font-weight:500;color:var(--ink-3);margin-left:3px}
+.dk-value.up{color:var(--ok)}
+.dk-value.down{color:var(--danger)}
+.dk-sub{font-size:10.8px;color:var(--ink-3);line-height:1.5;margin-top:2px;font-variant-numeric:tabular-nums}
+
+/* ---------- grid & cards ---------- */
+.dash-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:13px}
+.dash-grid .span2{grid-column:span 2}
+.dash-card{
+  min-width:0;padding:17px 18px 15px;border:1px solid var(--line);border-radius:var(--r-lg);
+  background:var(--surface);display:flex;flex-direction:column;
+}
+.dc-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:12px}
+.dc-head h2{display:flex;align-items:center;gap:7px;font-size:13.5px;font-weight:650;letter-spacing:.01em}
+.dc-head h2 svg{width:15px;height:15px;color:var(--ink-3)}
+.dc-head p{font-size:11px;color:var(--ink-3);margin-top:3px;line-height:1.5}
+.dc-badge{
+  flex:0 0 auto;padding:4px 9px;border-radius:999px;border:1px solid var(--line);background:var(--surface-2);
+  font-size:10.5px;color:var(--ink-3);font-variant-numeric:tabular-nums;white-space:nowrap;
+}
+
+/* ---------- charts ---------- */
+.dc-svg{width:100%;height:auto;display:block;overflow:visible}
+.dc-axis{fill:var(--ink-3);font-size:10px;font-family:var(--font-sans,system-ui,sans-serif);font-variant-numeric:tabular-nums}
+.dc-svg-hour{max-height:200px}
+
+.dc-donut-wrap{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.dc-donut{width:150px;max-width:46%;height:auto;flex:0 0 auto}
+.dc-donut-big{fill:var(--ink);font-family:var(--font-serif);font-size:22px;font-weight:650;font-variant-numeric:tabular-nums}
+.dc-donut-small{fill:var(--ink-3);font-size:9.5px;letter-spacing:.08em}
+.dc-donut-legend{flex:1;min-width:130px;display:flex;flex-direction:column;gap:9px}
+.dcl-item{display:flex;align-items:center;gap:8px;font-size:11.8px;color:var(--ink-2)}
+.dcl-item i{width:9px;height:9px;border-radius:3px;flex:0 0 auto}
+.dcl-item span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dcl-item b{font-weight:600;color:var(--ink);font-variant-numeric:tabular-nums}
+
+/* ---------- bars ---------- */
+.dc-bars{display:flex;flex-direction:column;gap:10px}
+.dc-bar-row{display:grid;grid-template-columns:minmax(52px,88px) minmax(0,1fr) auto;align-items:center;gap:10px}
+.dc-bar-label{font-size:11.5px;color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dc-bar-track{height:7px;border-radius:99px;background:var(--surface-3);overflow:hidden}
+.dc-bar-track i{display:block;height:100%;border-radius:99px;transition:width .5s var(--ease)}
+.dc-bar-value{font-size:10.8px;color:var(--ink-3);font-variant-numeric:tabular-nums;white-space:nowrap}
+.dc-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:14px;padding-top:12px;border-top:1px solid var(--line-2)}
+.dc-chip{
+  display:inline-flex;align-items:center;gap:6px;padding:4px 9px;border-radius:999px;
+  background:var(--surface-2);border:1px solid var(--line-2);font-size:10.5px;color:var(--ink-3);
+}
+.dc-chip b{color:var(--ink-2);font-weight:600;font-variant-numeric:tabular-nums}
+
+/* ---------- empty ---------- */
+.dc-empty{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;
+  min-height:150px;padding:20px;text-align:center;color:var(--ink-3);
+}
+.dc-empty svg{width:26px;height:26px;color:var(--ink-3);opacity:.7;margin-bottom:2px}
+.dc-empty b{font-size:12.5px;color:var(--ink-2);font-weight:600}
+.dc-empty p{font-size:11px;line-height:1.65;max-width:320px}
+.dc-empty-action{display:flex;justify-content:center;gap:8px;flex-wrap:wrap;margin-top:-4px}
+
+/* ---------- recent logs ---------- */
+.dc-logs{display:flex;flex-direction:column;max-height:420px;overflow:auto}
+.dc-log{
+  display:grid;grid-template-columns:44px 44px minmax(0,1fr) auto 76px;align-items:center;gap:9px;
+  padding:8px 2px;border-bottom:1px solid var(--line-2);font-size:11.8px;
+}
+.dc-log:last-child{border-bottom:0}
+.dcl-time{color:var(--ink-3);font-variant-numeric:tabular-nums;font-size:10.8px}
+.dcl-badge{
+  justify-self:start;padding:2px 7px;border-radius:999px;font-size:10px;white-space:nowrap;
+  background:var(--surface-2);border:1px solid var(--line-2);color:var(--ink-3);
+}
+.dcl-badge.create{background:var(--accent-soft);border-color:transparent;color:var(--accent)}
+.dcl-badge.draft{background:color-mix(in srgb,var(--warn) 12%,transparent);border-color:transparent;color:var(--warn)}
+.dcl-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink)}
+.dcl-delta{font-variant-numeric:tabular-nums;color:var(--ink-3);white-space:nowrap}
+.dcl-delta.up{color:var(--ok)}
+.dcl-delta.down{color:var(--danger)}
+.dcl-db{font-size:10.5px;color:var(--ink-3);text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* ---------- git ---------- */
+.git-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.git-branch{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--ink-2);font-family:var(--font-mono,monospace)}
+.git-branch svg{width:14px;height:14px}
+.git-state{font-size:10.5px;padding:3px 8px;border-radius:999px;border:1px solid var(--line-2);color:var(--ink-3)}
+.git-state.dirty{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 30%,var(--line));background:color-mix(in srgb,var(--warn) 7%,transparent)}
+.git-state.clean{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 26%,var(--line));background:color-mix(in srgb,var(--ok) 6%,transparent)}
+.git-last{display:flex;gap:9px;margin-top:12px;padding:10px 12px;border-radius:var(--r-md);background:var(--surface-2);border:1px solid var(--line-2)}
+.gl-hash{font-family:var(--font-mono,monospace);font-size:10px;color:var(--accent);flex:0 0 auto;padding-top:1px}
+.gl-main{min-width:0}
+.gl-main b{display:block;font-size:11.8px;font-weight:600;line-height:1.5;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gl-main span{font-size:10.3px;color:var(--ink-3)}
+.dc-git-spark{position:relative;margin-top:11px}
+.dc-git-spark svg{width:100%;height:34px;display:block}
+.spark-label{position:absolute;right:0;top:-14px;font-size:9.5px;color:var(--ink-3)}
+.git-commits{display:flex;flex-direction:column;margin-top:9px}
+.gc-row{display:grid;grid-template-columns:38px 52px minmax(0,1fr);gap:7px;align-items:center;padding:5px 0;border-bottom:1px solid var(--line-2);font-size:10.8px}
+.gc-row:last-child{border-bottom:0}
+.gc-row span{color:var(--ink-3);font-variant-numeric:tabular-nums}
+.gc-row code{font-family:var(--font-mono,monospace);font-size:9.8px;color:var(--ink-3)}
+.gc-row b{font-weight:450;color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.git-foot{margin-top:10px;font-size:10.5px;color:var(--ink-3);line-height:1.6;word-break:break-all}
+.git-foot a{color:var(--accent);text-decoration:none}
+.git-foot a:hover{text-decoration:underline}
+
+/* ---------- revisions ---------- */
+.dc-revs{display:flex;flex-direction:column}
+.dc-rev{
+  display:grid;grid-template-columns:110px minmax(0,1fr) minmax(0,.9fr) 70px;gap:10px;align-items:center;
+  padding:8px 4px;border-bottom:1px solid var(--line-2);text-decoration:none;color:inherit;border-radius:var(--r-sm);
+  transition:background var(--dur) var(--ease);
+}
+.dc-rev:last-child{border-bottom:0}
+.dc-rev:hover{background:var(--surface-2)}
+.dcr-time{font-size:10.5px;color:var(--ink-3);font-variant-numeric:tabular-nums}
+.dcr-title{font-size:11.8px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dcr-note{font-size:10.5px;color:var(--ink-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dcr-words{font-size:10.5px;color:var(--ink-3);text-align:right;font-variant-numeric:tabular-nums}
+
+/* ---------- db details ---------- */
+.dc-dbs{display:flex;flex-direction:column;gap:13px}
+.dc-db{padding:11px 12px;border:1px solid var(--line-2);border-radius:var(--r-md);background:var(--surface-2)}
+.dcdb-head{display:flex;align-items:center;gap:7px;font-size:11.8px}
+.dcdb-head i{width:8px;height:8px;border-radius:50%;background:var(--db,var(--accent));flex:0 0 auto}
+.dcdb-head b{font-weight:600}
+.dcdb-head span{font-size:10px;color:var(--ink-3);margin-left:auto}
+.dcdb-stats{display:flex;gap:13px;margin-top:8px;font-size:10.5px;color:var(--ink-3);font-variant-numeric:tabular-nums}
+.dcdb-stats b{color:var(--ink-2);font-weight:600}
+.dcdb-bar{height:5px;margin-top:9px;border-radius:99px;background:var(--surface-3);overflow:hidden}
+.dcdb-bar i{display:block;height:100%;border-radius:99px;background:var(--db,var(--accent))}
+
+.dash-foot{text-align:center;font-size:10.3px;color:var(--ink-3);padding:4px 0 10px}
+
+.hero-live-dot{
+  display:inline-block;width:6px;height:6px;border-radius:50%;flex:0 0 auto;
+  background:var(--ok);box-shadow:0 0 0 3px color-mix(in srgb,var(--ok) 15%,transparent);
+}
+
+/* ---------- responsive ---------- */
+@media (max-width:960px){
+  .dash-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .dash-grid,.dash-grid.three{grid-template-columns:1fr 1fr}
+  .dash-grid .span2{grid-column:span 2}
+}
+@media (max-width:680px){
+  .dash-hero{padding:20px 18px 17px;border-radius:var(--r-lg)}
+  .dash-hero-line{align-items:flex-start}
+  .dash-actions{width:100%;justify-content:flex-start}
+  .dash-kpis{grid-template-columns:1fr 1fr;gap:8px}
+  .dash-kpi{padding:12px 12px 10px;min-height:94px}
+  .dk-icon{width:26px;height:26px;right:10px;top:10px}
+  .dk-icon svg{width:14px;height:14px}
+  .dk-value{font-size:22px}
+  .dash-grid,.dash-grid.three{grid-template-columns:1fr}
+  .dash-grid .span2{grid-column:span 1}
+  .dash-card{padding:14px 14px 12px}
+  .dc-log{grid-template-columns:40px 40px minmax(0,1fr) auto;gap:7px}
+  .dcl-db{display:none}
+  .dc-rev{grid-template-columns:96px minmax(0,1fr) 62px;gap:7px}
+  .dcr-note{display:none}
+  .dc-bar-row{grid-template-columns:64px minmax(0,1fr);row-gap:2px}
+  .dc-bar-value{grid-column:2;font-size:10px}
+  .dc-donut-wrap{justify-content:center}
+  .dc-donut{max-width:170px}
+}
+@media (prefers-reduced-motion:reduce){
+  .dash-live.on i{animation:none}
+  .dash-kpi.loading{animation:none}
+  .dc-bar-track i{transition:none}
+}

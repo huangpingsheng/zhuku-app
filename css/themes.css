@@ -1,0 +1,20 @@
+/* ============================================================
+   themes.css · 主题插件共用底纹与过渡
+   ============================================================ */
+:root{
+  --theme-noise:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)' opacity='.55'/%3E%3C/svg%3E");
+}
+
+html[data-skin] body,
+html[data-skin] .app,
+html[data-skin] .topbar,
+html[data-skin] .sidebar,
+html[data-skin] .wpanel,
+html[data-skin] .modal,
+html[data-skin] .palette{
+  transition:background-color .35s var(--ease),color .25s var(--ease),border-color .25s var(--ease);
+}
+
+@media (prefers-reduced-motion:reduce){
+  html[data-skin] body{animation:none!important}
+}
