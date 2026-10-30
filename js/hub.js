@@ -14,6 +14,9 @@
   let pluginTab = 'themes';
   let marketCache = null;
   let marketUrl = '';
+  let marketLoading = false;
+  let marketError = '';
+  let autoUpdating = false;
   let installing = false;
 
   let settingsTab = 'overview';
@@ -569,12 +572,100 @@
         const settings = await api().settings();
         marketUrl = (settings && settings.plugins && settings.plugins.marketUrl) || marketUrl;
       } catch (e) { /* 忽略 */ }
+      if (!marketUrl) marketUrl = (window.WB64 && window.WB64.remote && window.WB64.remote.marketUrl) || '';
+      loadMarketCache();
     } catch (error) {
       window.Lib.render('<div class="hub">' + window.Lib.pageHead(crumb('插件'), '插件与主题', '', '') + hubError(errText(error), 'plugins') + '</div>');
       bindRetry('plugins', plugins);
       return;
     }
     renderPlugins();
+  }
+
+  async function loadMarketCache(force) {
+    if (!marketUrl || marketLoading) return;
+    marketLoading = true;
+    marketError = '';
+    if (pluginTab === 'market') renderPlugins();
+    try {
+      marketCache = await api().market(marketUrl, force);
+      autoUpdatePlugins();
+    } catch (error) {
+      marketError = errText(error) || '读取失败';
+    } finally {
+      marketLoading = false;
+      if (pluginTab === 'market') renderPlugins();
+    }
+  }
+
+  async function autoUpdatePlugins() {
+    if (autoUpdating || !marketCache) return;
+    const list = marketUpdates();
+    if (!list.length) return;
+    autoUpdating = true;
+    let done = 0;
+    try {
+      for (const item of list) {
+        try {
+          await api().installPlugin({ id: item.id, source: marketUrl });
+          done += 1;
+        } catch (e) { /* 单个失败不影响其它 */ }
+      }
+      if (!done) return;
+      await window.ThemeEngine.refreshPlugins();
+      U.toast('插件已自动更新 ' + done + ' 个', 'refresh');
+      if (pluginTab === 'market') {
+        await loadMarketAfterInstall();
+        renderPlugins();
+      }
+    } finally {
+      autoUpdating = false;
+    }
+  }
+
+  async function loadMarketAfterInstall() {
+    if (!marketUrl) return;
+    try {
+      marketCache = await api().market(marketUrl, true);
+      marketError = '';
+    } catch (error) {
+      marketError = errText(error) || '';
+    }
+  }
+
+  function versionParts(value) {
+    return (String(value || '').match(/\d+/g) || []).map(Number);
+  }
+
+  function versionNewer(remote, local) {
+    const a = versionParts(remote);
+    const b = versionParts(local);
+    const n = Math.max(a.length, b.length);
+    for (let i = 0; i < n; i += 1) {
+      const x = a[i] || 0;
+      const y = b[i] || 0;
+      if (x !== y) return x > y;
+    }
+    return false;
+  }
+
+  function marketInstalled() {
+    const map = new Map();
+    (window.ThemeEngine ? window.ThemeEngine.plugins : []).forEach((p) => map.set(p.id, p));
+    return map;
+  }
+
+  function marketUpdates() {
+    if (!marketCache) return [];
+    const installed = marketInstalled();
+    return marketCache.plugins.filter((p) => {
+      const cur = installed.get(p.id);
+      return !!(cur && versionNewer(p.version, cur.version));
+    });
+  }
+
+  function shortSource(url) {
+    return String(url || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
   }
 
   function pluginTypeLabel(type) {
@@ -767,38 +858,77 @@
   }
 
   function marketTab() {
+    const updates = marketUpdates();
+    const installed = marketInstalled();
+    const fetched = marketCache && marketCache.fetchedAt;
     let body = '<div class="market-bar">' +
-      '<input class="input" id="marketUrl" placeholder="插件市场清单地址，例如 https://raw.githubusercontent.com/你/写作库插件/main/market.json" value="' + U.esc(marketUrl) + '">' +
-      '<button class="btn primary" data-market-load>读取市场</button>' +
+      '<input class="input" id="marketUrl" placeholder="插件清单地址（GitHub raw）" value="' + U.esc(marketUrl) + '">' +
+      '<button class="btn primary" data-market-load>' + U.icon('refresh') + '读取市场</button>' +
+      (updates.length ? '<button class="btn dark" data-market-update-all>全部更新 ' + updates.length + '</button>' : '') +
       '</div>' +
-      '<div class="market-hint">清单格式：<code>{ "name": "…", "plugins": [{ "id": "paper-texture", "name": "纸质纹理", "type": "theme", "manifestUrl": "https://…/plugin.json" }] }</code></div>';
-    if (!marketCache) {
-      body += '<div class="market-empty">' + U.icon('cloud') + '<b>还没有读取市场</b><p>填上你以后托管在 Git 上的清单地址，点「读取市场」。也可以直接用上面的「安装文件」导入单个插件。</p></div>';
+      '<div class="market-source">' +
+      (marketUrl ? '来源 · ' + U.esc(shortSource(marketUrl)) : '还没有配置清单地址') +
+      (fetched ? ' · ' + fmtDateTime(fetched) + ' 读取' : '') +
+      (marketCache && marketCache.name ? ' · ' + U.esc(marketCache.name) : '') +
+      '</div>';
+    if (marketError) {
+      body += '<div class="market-notice warn">' + U.icon('alert') + '<span>' + U.esc(marketError) + '。下面是上次成功读取的内容。</span></div>';
+    } else if (marketCache && marketCache.stale) {
+      body += '<div class="market-notice warn">' + U.icon('cloud') + '<span>现在连不上清单，显示的是上次缓存；恢复网络后点「读取市场」刷新。</span></div>';
+    }
+    if (marketLoading) {
+      body += '<div class="market-empty">' + U.icon('refresh') + '<b>正在读取插件清单…</b><p>只下载清单；安装某个插件时才读取它的内容。</p></div>';
+    } else if (!marketCache) {
+      body += '<div class="market-empty">' + U.icon('cloud') + '<b>还没有读取市场</b><p>打开这个页面会自动读取一次；也可以填上你自己的 Git 清单地址，点「读取市场」。</p></div>';
     } else {
-      body += '<div class="market-head"><b>' + U.esc(marketCache.name || '插件市场') + '</b><span>' + marketCache.plugins.length + ' 个插件' + (marketCache.updatedAt ? ' · ' + U.esc(marketCache.updatedAt) : '') + '</span></div>';
-      body += '<div class="market-grid">' + marketCache.plugins.map((p) =>
-        '<div class="market-card">' +
-        '<div class="plugin-title">' + U.esc(p.name) + '<span class="pill">' + pluginTypeLabel(p.type) + '</span></div>' +
-        '<div class="plugin-desc">' + U.esc(p.description || '') + '</div>' +
-        '<div class="plugin-meta">v' + U.esc(p.version) + (p.author ? ' · ' + U.esc(p.author) : '') + '</div>' +
-        '<button class="btn sm primary" data-market-install="' + U.esc(p.manifestUrl) + '"' + (p.manifestUrl ? '' : ' disabled') + '>安装</button>' +
-        '</div>').join('') + '</div>';
+      body += '<div class="market-head"><b>' + U.esc(marketCache.name || '插件市场') + '</b><span>' + marketCache.plugins.length + ' 个插件' +
+        (updates.length ? ' · ' + updates.length + ' 个可更新' : '') + '</span></div>';
+      body += '<div class="market-grid">' + marketCache.plugins.map((p) => {
+        const cur = installed.get(p.id);
+        const newer = cur && versionNewer(p.version, cur.version);
+        const mode = !cur ? 'install' : (newer ? 'update' : 'installed');
+        return '<div class="market-card ' + mode + '">' +
+          '<div class="plugin-title">' + U.esc(p.name) + '<span class="pill">' + pluginTypeLabel(p.type) + '</span>' +
+          (p.hasScript ? '<span class="pill warn">含脚本·不执行</span>' : '') +
+          (mode === 'installed' ? '<span class="pill ok">已安装</span>' : '') + '</div>' +
+          '<div class="plugin-desc">' + U.esc(p.description || '') + '</div>' +
+          '<div class="plugin-meta">v' + U.esc(p.version) + (p.author ? ' · ' + U.esc(p.author) : '') +
+          (cur ? ' · 本机 v' + U.esc(cur.version || '1.0.0') : '') + '</div>' +
+          '<div class="market-actions">' +
+          (mode === 'installed'
+            ? '<button class="btn sm" data-market-apply="' + U.esc(p.id) + '">使用</button>'
+            : '<button class="btn sm primary" data-market-install="' + U.esc(p.id) + '"' + (p.hasInline || p.manifestUrl ? '' : ' disabled') + '>' + (mode === 'update' ? '更新' : '安装') + '</button>') +
+          '</div></div>';
+      }).join('') + '</div>';
     }
     body += '<details class="plugin-doc"><summary>插件清单写法（你以后开发插件用）</summary><pre>' +
       U.esc(JSON.stringify({
-        id: 'paper-texture',
-        name: '纸质纹理',
-        version: '1.2.0',
-        type: 'theme',
-        params: { tint: { label: '纸色', type: 'color', def: '#F4EDDF' }, grain: { label: '颗粒', type: 'range', min: 0, max: 60, def: 38 } },
-        defaults: { tint: '#F4EDDF', grain: 38 },
-        cssText: 'html[data-skin="paper-texture"]{--bg:var(--skin-tint);}'
-      }, null, 2)) + '</pre></details>';
+        name: '我的插件市场',
+        updatedAt: '2026-10-31',
+        plugins: [{
+          id: 'paper-texture',
+          name: '纸质纹理',
+          version: '1.2.0',
+          type: 'theme',
+          author: '写作库',
+          description: '低饱和纸面与细颗粒',
+          params: { tint: { label: '纸色', type: 'color', def: '#F4EDDF' }, grain: { label: '颗粒', type: 'range', min: 0, max: 60, def: 38 } },
+          defaults: { tint: '#F4EDDF', grain: 38 },
+          cssText: 'html[data-skin="paper-texture"]{--bg:var(--skin-tint);}'
+        }]
+      }, null, 2)) + '</pre>' +
+      '<p class="market-hint">整份清单放在 Git 上即可；插件内容也可以拆成单独文件，用 <code>manifestUrl</code> 指向它。版本号变大时，市场会显示「更新」。</p></details>';
     return body;
   }
 
   function bindPlugins() {
-    onAll('[data-plugin-tab]', (b) => { b.onclick = () => { pluginTab = b.getAttribute('data-plugin-tab'); renderPlugins(); }; });
+    onAll('[data-plugin-tab]', (b) => {
+      b.onclick = () => {
+        pluginTab = b.getAttribute('data-plugin-tab');
+        renderPlugins();
+        if (pluginTab === 'market') loadMarketCache();
+      };
+    });
     onAll('[data-fc-toggle]', (b) => {
       b.onclick = () => {
         if (!window.FocusCursor) return;
@@ -969,10 +1099,12 @@
       b.onclick = async () => {
         const input = $('#marketUrl');
         const url = (input && input.value.trim()) || '';
-        if (!url) { U.toast('先填插件市场清单地址', 'info'); return; }
+        if (!url) { U.toast('先填插件清单地址', 'info'); return; }
         busy(b, true, '读取中…');
+        marketError = '';
         try {
-          marketCache = await api().market(url);
+          const result = await api().market(url, true);
+          marketCache = result;
           marketUrl = url;
           try {
             const current = settingsCache || await api().settings();
@@ -980,6 +1112,9 @@
           } catch (e) { /* 忽略保存失败 */ }
           busy(b, false);
           renderPlugins();
+          autoUpdatePlugins();
+          if (result.stale) U.toast('现在连不上清单，显示的是上次缓存', 'cloud');
+          else U.toast('已读取 ' + result.plugins.length + ' 个插件', 'check');
         } catch (error) {
           busy(b, false);
           U.toast(errText(error), 'alert');
@@ -988,15 +1123,42 @@
     });
     onAll('[data-market-install]', (b) => {
       b.onclick = async () => {
-        const url = b.getAttribute('data-market-install');
-        if (!url) return;
+        const id = b.getAttribute('data-market-install');
+        if (!id) return;
         busy(b, true, '安装中…');
         try {
-          const record = await api().installPlugin({ url });
+          const record = await api().installPlugin({ id, source: marketUrl });
           await window.ThemeEngine.refreshPlugins();
           U.toast('已安装：' + (record.name || record.id), 'check');
+          await loadMarketAfterInstall();
           renderPlugins();
         } catch (error) { busy(b, false); U.toast(errText(error), 'alert'); }
+      };
+    });
+    onAll('[data-market-apply]', (b) => {
+      b.onclick = () => {
+        const id = b.getAttribute('data-market-apply');
+        if (window.ThemeEngine.apply(id)) { U.toast('已切换主题', 'palette'); renderPlugins(); }
+        else U.toast('这个插件不能直接作为主题使用', 'info');
+      };
+    });
+    on('[data-market-update-all]', (b) => {
+      b.onclick = async () => {
+        const list = marketUpdates();
+        if (!list.length) { U.toast('没有可更新的插件', 'check'); return; }
+        busy(b, true, '更新 ' + list.length + ' 个…');
+        let done = 0;
+        for (const item of list) {
+          try {
+            await api().installPlugin({ id: item.id, source: marketUrl });
+            done += 1;
+          } catch (e) { /* 单个失败不影响其它 */ }
+        }
+        await window.ThemeEngine.refreshPlugins();
+        busy(b, false);
+        U.toast('已更新 ' + done + ' 个插件', 'check');
+        await loadMarketAfterInstall();
+        renderPlugins();
       };
     });
   }
@@ -1033,7 +1195,7 @@
     let body = '';
     if (settingsTab === 'overview') {
       body = '<div class="set-cards">' +
-        '<div class="set-card span2"><div class="sc-head"><div><h3>写作库 6.4 · 同步版</h3><p>离线可编辑 · 编辑保存在浏览器，刷新不丢</p></div><span class="version-badge">6.4.0-p2</span></div>' +
+        '<div class="set-card span2"><div class="sc-head"><div><h3>写作库 6.4 · 同步版</h3><p>离线可编辑 · 编辑保存在浏览器，刷新不丢</p></div><span class="version-badge">' + U.esc((window.WB64 && window.WB64.BUILD) || '6.4.1') + '</span></div>' +
         '<div class="sc-stats"><div><b>' + U.fmt(totalDocs) + '</b><span>篇 md</span></div><div><b>' + (D.ready ? U.fmt(D.stats.words) : '—') + '</b><span>合计字数</span></div>' +
         '<div><b>' + (D.ready ? D.databases.length : '—') + '</b><span>数据库</span></div><div><b>' + projects + '</b><span>写作台作品</span></div><div><b>' + draftsCount + '</b><span>草稿</span></div></div>' +
         '<div class="sc-actions"><button class="btn primary sm" data-set-act="writer">' + U.icon('feather') + '打开写作台</button>' +
@@ -1107,7 +1269,7 @@
         '<div class="set-card"><h3>' + U.icon('lock') + '安全边界</h3><ul class="ver-list"><li>密钥永远不写进 工程.json / 草稿.json / 设置.json</li>' +
         '<li>AI 插件必须由你手动安装并启用</li><li>正文只在你的本机服务与网络内流转</li></ul></div>';
     } else {
-      body = '<div class="set-card"><div class="sc-head"><div><h3>写作库 · 6.4 同步版</h3><p>6.4.0-p2 · 2026-10-30</p></div><span class="version-badge">Web</span></div>' +
+      body = '<div class="set-card"><div class="sc-head"><div><h3>写作库 · 6.4 同步版</h3><p>' + U.esc((window.WB64 && window.WB64.BUILD) || '6.4.1') + ' · 2026-10-31</p></div><span class="version-badge">Web</span></div>' +
         '<p class="set-sub">离线优先：1,448 篇文稿与写作台工程都装进浏览器，编辑即时保存；连接 GitHub 后可把改动同步到私有仓库。</p>' +
         '<ul class="ver-list">' +
         '<li>6.4 P2：应用内 GitHub 同步面板，连接、检查、拉取、提交、冲突选择与同步历史都在设置里</li>' +
@@ -1131,7 +1293,7 @@
     }
     const html = '<div class="hub hub-settings">' +
       window.Lib.pageHead(crumb('设置'), '设置',
-        '<span class="pill">v6.4.0-p2</span><span class="pill">离线可编辑</span><span class="pill">' + (info ? syncLabel(info) : '离线') + '</span>', '') +
+        '<span class="pill">v' + U.esc((window.WB64 && window.WB64.BUILD) || '6.4.1') + '</span><span class="pill">离线可编辑</span><span class="pill">' + (info ? syncLabel(info) : '离线') + '</span>', '') +
       settingsTabs() + '<div class="settings-body">' + body + '</div></div>';
     window.Lib.render(html);
     bindSettings();
@@ -1382,18 +1544,18 @@
         '<div><b>1</b><span>在 GitHub 新建仓库，建议 Private；不需要初始化 README。</span></div>' +
         '<div><b>2</b><span>新建 fine-grained Token，只授权这个仓库的 Contents 读写。</span></div>' +
         '<div><b>3</b><span>填在下面并连接。连接只验证权限，不会上传内容。</span></div></div>') +
-      '<div class="row"><div class="field grow"><label>用户名 / 组织</label>' +
-      '<input class="input" id="ghOwner" value="' + U.esc(c.owner || '') + '" placeholder="例如 octocat" autocomplete="off" spellcheck="false"></div>' +
-      '<div class="field grow"><label>仓库名</label>' +
-      '<input class="input" id="ghRepo" value="' + U.esc(c.repo || '') + '" placeholder="例如 writing-library" autocomplete="off" spellcheck="false"></div></div>' +
-      '<div class="row"><div class="field grow"><label>分支</label>' +
-      '<input class="input" id="ghBranch" value="' + U.esc(c.branch || 'main') + '" placeholder="main" autocomplete="off" spellcheck="false"></div>' +
-      '<div class="field grow"><label>同步目录</label>' +
-      '<input class="input" id="ghDir" value="' + U.esc(c.dir || '写作库同步') + '" placeholder="写作库同步" autocomplete="off" spellcheck="false"></div></div>' +
-      '<div class="field"><label>Personal access token</label>' +
+      '<div class="row"><div class="field grow"><label for="ghOwner">用户名 / 组织</label>' +
+      '<input class="input" id="ghOwner" value="' + U.esc(c.owner || '') + '" placeholder="例如 octocat" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"></div>' +
+      '<div class="field grow"><label for="ghRepo">仓库名</label>' +
+      '<input class="input" id="ghRepo" value="' + U.esc(c.repo || '') + '" placeholder="例如 writing-library" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"></div></div>' +
+      '<div class="row"><div class="field grow"><label for="ghBranch">分支</label>' +
+      '<input class="input" id="ghBranch" value="' + U.esc(c.branch || 'main') + '" placeholder="main" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"></div>' +
+      '<div class="field grow"><label for="ghDir">同步目录</label>' +
+      '<input class="input" id="ghDir" value="' + U.esc(c.dir || '写作库同步') + '" placeholder="写作库同步" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"></div></div>' +
+      '<div class="field"><label for="ghToken">Personal access token</label>' +
       '<input class="input" id="ghToken" type="password" placeholder="' +
       (g && g.tokenPresent ? '已保存，不显示；留空表示继续使用' : '粘贴 fine-grained Token，仅授权这个仓库的 Contents 读写') +
-      '" autocomplete="off" spellcheck="false"></div>' +
+      '" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"></div>' +
       '<label class="check-line"><input type="checkbox" id="ghRemember"' + (c.remember !== false ? ' checked' : '') + '> 在这台设备记住 Token（不勾选则关闭页面后要重填）</label>' +
       '<details class="gh-advanced"' + (c.apiBase && c.apiBase !== 'https://api.github.com' ? ' open' : '') + '>' +
       '<summary>高级：API 地址</summary><div class="field">' +

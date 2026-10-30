@@ -449,7 +449,7 @@ body.mode-write .lib-fab,body.immersive .lib-fab,body.reading .lib-fab,body.draf
   color:var(--danger);
 }
 .gh-form{display:flex;flex-direction:column;gap:2px}
-.gh-form .row{display:flex;gap:10px}
+.gh-form .row{display:flex;gap:10px;align-items:stretch}
 .gh-form .field.grow{flex:1 1 0;min-width:0}
 .gh-steps{
   display:flex;flex-direction:column;gap:6px;padding:10px 12px;margin-bottom:8px;
@@ -503,9 +503,33 @@ body.mode-write .lib-fab,body.immersive .lib-fab,body.reading .lib-fab,body.draf
 .gh-log-row span{font-size:10.5px;color:var(--ink-3)}
 .gh-actions{margin-top:2px}
 @media (max-width:760px){
-  .gh-form .row{flex-direction:column;gap:0}
+  .gh-form .row{flex-direction:column;align-items:stretch;gap:12px}
+  .gh-form .field,.gh-form .field.grow{width:100%}
+  .gh-form .sc-actions .btn{flex:1 1 auto;justify-content:center}
+  .gh-form .sc-actions .hint{flex-basis:100%}
   .gh-repo{flex-direction:column}
   .gh-conflict-cols{grid-template-columns:1fr}
   .gh-pending-row{grid-template-columns:minmax(0,1fr) auto}
   .gh-pending-row .hint{display:none}
+}
+
+/* ---------- market refresh / updates ---------- */
+.market-source{font-size:10.5px;color:var(--ink-3);line-height:1.6;margin:-2px 0 14px;overflow-wrap:anywhere}
+.market-notice{
+  display:flex;align-items:flex-start;gap:7px;padding:9px 11px;border-radius:10px;
+  font-size:11.5px;line-height:1.6;margin-bottom:12px;
+  border:1px solid var(--line-2);background:var(--surface-2);color:var(--ink-3);
+}
+.market-notice svg{width:14px;height:14px;flex:0 0 auto;margin-top:1px}
+.market-notice.warn{
+  border-color:color-mix(in srgb,var(--warn) 28%,var(--line));
+  background:color-mix(in srgb,var(--warn) 8%,transparent);color:var(--ink-2);
+}
+.market-card.installed{border-color:color-mix(in srgb,var(--accent) 22%,var(--line))}
+.market-card.update{border-color:color-mix(in srgb,var(--accent) 38%,var(--line))}
+.market-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:auto;padding-top:6px}
+.market-actions .btn{height:28px;padding:0 10px;font-size:11.5px;margin-top:0}
+@media (max-width:760px){
+  .market-card .btn{align-self:stretch}
+  .market-actions .btn{flex:1 1 auto}
 }

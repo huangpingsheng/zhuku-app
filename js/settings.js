@@ -347,7 +347,7 @@
       '<button class="btn danger" data-data="clear-all">清空全部写作数据</button></div></div>';
 
     h += '<div class="about-card"><span class="logo">写</span><div><b>写作库 · 6.4 同步版</b>' +
-      '<p>v6.4.0-p1 · 离线可编辑 · 1,448 篇文稿与写作台工程随页面加载，编辑保存在浏览器，不依赖本地 Node 服务</p></div></div>';
+      '<p>v' + U.esc((window.WB64 && window.WB64.BUILD) || '6.4.1') + ' · 离线可编辑 · 1,448 篇文稿与写作台工程随页面加载，编辑保存在浏览器，不依赖本地 Node 服务</p></div></div>';
     return h;
   }
 

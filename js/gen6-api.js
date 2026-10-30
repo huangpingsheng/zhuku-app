@@ -93,7 +93,7 @@
     installPlugin: (payload) => request('/api/plugins/install', { method: 'POST', body: payload || {} }),
     togglePlugin: (id, enabled) => request('/api/plugins/toggle', { method: 'POST', body: { id, enabled } }),
     deletePlugin: (id) => request('/api/plugins/delete', { method: 'POST', body: { id } }),
-    market: (url) => request('/api/plugins/market', { method: 'POST', body: { url } }),
+    market: (url, force) => request('/api/plugins/market', { method: 'POST', body: { url, force: !!force } }),
   };
 
   async function exportZip(query) {

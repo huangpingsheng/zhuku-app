@@ -9,7 +9,17 @@
   'use strict';
   if (window.WB64) return;
 
-  const BUILD = '6.4.0-p2';
+  const BUILD = '6.4.2';
+  const REMOTE = {
+    owner: 'huangpingsheng',
+    repo: 'zhuku-app',
+    branch: 'main',
+    marketUrl: 'https://raw.githubusercontent.com/huangpingsheng/zhuku-app/main/data/plugins.json',
+    versionUrl: 'https://raw.githubusercontent.com/huangpingsheng/zhuku-app/main/version.json'
+  };
+  const PLUGIN_CSS_LIMIT = 512 * 1024;
+  const PLUGIN_MAX = 200;
+  const MARKET_TTL = 5 * 60 * 1000;
   const DB1 = 'zhuku';
   const TYPES = ['小说', '毕设', '资料', '素材'];
   const PREFIX = { 小说: 'XS', 毕设: 'BS', 资料: 'ZL', 素材: 'SC' };
@@ -93,6 +103,7 @@
     workspace: null,
     settings: null,
     plugins: [],
+    marketCache: null,
     drafts: [],
     records: [],
     seedRecords: [],
@@ -2661,6 +2672,46 @@
     return state.settings;
   }
 
+  function pluginUrl(raw) {
+    let url;
+    try { url = new URL(String(raw || '').trim()); } catch (e) { throw new Error('插件地址不合法'); }
+    const local = ['localhost', '127.0.0.1', '::1'].indexOf(url.hostname) > -1;
+    if (url.protocol !== 'https:' && !(url.protocol === 'http:' && local)) {
+      throw new Error('插件地址必须是 https（本机测试可用 127.0.0.1）');
+    }
+    if (url.username || url.password) throw new Error('插件地址不能带账号密码');
+    return url.toString();
+  }
+
+  function cleanPluginCss(css) {
+    const text = String(css || '');
+    if (!text) return '';
+    if (text.length > PLUGIN_CSS_LIMIT) throw new Error('插件样式超过 512KB，已拒绝');
+    if (/@import\b/i.test(text)) throw new Error('插件样式不能使用 @import');
+    if (/expression\s*\(|javascript\s*:|-moz-binding|behavior\s*:/i.test(text)) throw new Error('插件样式含有不允许的写法');
+    return text;
+  }
+
+  async function fetchPluginJson(rawUrl) {
+    const url = pluginUrl(rawUrl);
+    if (!nativeFetch) throw new Error('当前环境不能联网');
+    const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timer = ctrl ? setTimeout(() => ctrl.abort(), 12000) : null;
+    try {
+      const res = await nativeFetch(url, { cache: 'no-store', signal: ctrl ? ctrl.signal : undefined });
+      if (!res.ok) throw new Error('读取失败：HTTP ' + res.status);
+      const text = await res.text();
+      if (text.length > 2 * 1024 * 1024) throw new Error('插件文件超过 2MB，已拒绝');
+      try { return JSON.parse(text); } catch (e) { throw new Error('不是合法的 JSON'); }
+    } catch (error) {
+      if (error && error.name === 'AbortError') throw new Error('读取超时，检查网络或地址');
+      if (error && /Failed to fetch|NetworkError|Load failed/i.test(error.message || '')) throw new Error('连不上这个地址，检查网络');
+      throw error;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
   function normalizePlugin(m) {
     if (!m || !m.id) throw new Error('插件清单缺少 id');
     return Object.assign({}, m, {
@@ -2669,12 +2720,96 @@
       version: m.version || '1.0.0',
       type: m.type || 'theme',
       enabled: m.enabled !== false,
-      jsText: m.jsText || '',
-      cssText: m.cssText || '',
+      jsText: m.jsText ? String(m.jsText).slice(0, 200000) : '',
+      cssText: cleanPluginCss(m.cssText || m.css || ''),
       installedAt: m.installedAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
       source: m.source || '浏览器',
       dir: 'data/plugins/' + m.id
     });
+  }
+
+  function normalizeMarket(payload, source) {
+    const list = Array.isArray(payload) ? payload : (payload && Array.isArray(payload.plugins) ? payload.plugins : null);
+    if (!list) throw new Error('清单格式不对：需要 { plugins: [...] }');
+    if (list.length > PLUGIN_MAX) throw new Error('清单里的插件超过 ' + PLUGIN_MAX + ' 个');
+    const raw = new Map();
+    const plugins = [];
+    list.forEach((item) => {
+      if (!item || !item.id) return;
+      const id = String(item.id);
+      raw.set(id, item);
+      let manifestUrl = '';
+      if (item.manifestUrl) {
+        try { manifestUrl = pluginUrl(new URL(item.manifestUrl, source).toString()); } catch (e) { manifestUrl = ''; }
+      }
+      plugins.push({
+        id,
+        name: item.name || id,
+        version: item.version || '1.0.0',
+        type: item.type || 'theme',
+        author: item.author || '',
+        description: item.description || '',
+        hasInline: !!(item.cssText || item.css),
+        hasScript: !!item.jsText,
+        manifestUrl
+      });
+    });
+    return {
+      name: payload && payload.name ? String(payload.name) : '插件市场',
+      source,
+      updatedAt: payload && payload.updatedAt ? String(payload.updatedAt) : '',
+      fetchedAt: new Date().toISOString(),
+      plugins,
+      raw
+    };
+  }
+
+  function marketPublic(catalog) {
+    return {
+      name: catalog.name,
+      source: catalog.source,
+      updatedAt: catalog.updatedAt || '',
+      fetchedAt: catalog.fetchedAt || '',
+      plugins: catalog.plugins || [],
+      stale: !!catalog.stale,
+      error: catalog.error || ''
+    };
+  }
+
+  async function loadMarket(source, force) {
+    const cached = state.marketCache && state.marketCache.source === source ? state.marketCache : null;
+    const fresh = cached && cached.raw && Date.now() - Date.parse(cached.fetchedAt || 0) < MARKET_TTL;
+    if (fresh && !force) return marketPublic(cached);
+    try {
+      const payload = await fetchPluginJson(source);
+      const catalog = normalizeMarket(payload, source);
+      state.marketCache = catalog;
+      await kvSet('pluginMarket', marketPublic(catalog));
+      return marketPublic(catalog);
+    } catch (error) {
+      const fallback = cached || (await kvGet('pluginMarket'));
+      if (fallback && Array.isArray(fallback.plugins) && fallback.plugins.length) {
+        return Object.assign({}, marketPublic(fallback), { stale: true, error: error.message });
+      }
+      throw error;
+    }
+  }
+
+  async function marketManifest(source, id) {
+    let catalog = state.marketCache && state.marketCache.source === source ? state.marketCache : null;
+    if (!catalog || !catalog.raw) {
+      const payload = await fetchPluginJson(source);
+      catalog = normalizeMarket(payload, source);
+      state.marketCache = catalog;
+      await kvSet('pluginMarket', marketPublic(catalog));
+    }
+    const item = catalog.raw.get(String(id));
+    if (!item) throw new Error('清单里没有这个插件');
+    if (!item.cssText && !item.css && item.manifestUrl) {
+      return fetchPluginJson(new URL(item.manifestUrl, source).toString());
+    }
+    return item;
   }
 
   function draftFields(payload, title) {
@@ -2793,8 +2928,27 @@
     }
     if (path === '/api/plugins/install' && method === 'POST') {
       const body = await bodyOf(init);
-      if (body.url) return notMine('从网址安装插件需要联网，P2 之后接入');
-      const plugin = normalizePlugin(body.manifest || body.plugin);
+      let manifest = body.manifest || body.plugin || null;
+      let origin = '';
+      if (!manifest && body.url) {
+        origin = pluginUrl(body.url);
+        manifest = await fetchPluginJson(origin);
+      }
+      if (!manifest && body.id) {
+        origin = pluginUrl(body.source || (state.settings && state.settings.plugins && state.settings.plugins.marketUrl) || REMOTE.marketUrl);
+        manifest = await marketManifest(origin, body.id);
+      }
+      if (!manifest) throw new Error('缺少插件清单');
+      const plugin = normalizePlugin(manifest);
+      const existing = state.plugins.find((p) => p.id === plugin.id) || null;
+      if (existing) {
+        if (manifest.enabled === undefined) plugin.enabled = existing.enabled !== false;
+        if (!manifest.installedAt) plugin.installedAt = existing.installedAt;
+      }
+      if (origin) {
+        plugin.origin = origin;
+        plugin.source = 'Git 插件';
+      }
       state.plugins = state.plugins.filter((p) => p.id !== plugin.id).concat(plugin);
       await kvSet('plugins', state.plugins);
       return json({ ok: true, plugin }, 201);
@@ -2813,7 +2967,11 @@
       await kvSet('plugins', state.plugins);
       return json({ ok: true, removed: body.id });
     }
-    if (path === '/api/plugins/market') return notMine('插件市场要连 GitHub，P2 之后接入');
+    if (path === '/api/plugins/market' && method === 'POST') {
+      const body = await bodyOf(init);
+      const source = pluginUrl(body.url || (state.settings && state.settings.plugins && state.settings.plugins.marketUrl) || REMOTE.marketUrl);
+      return json(await loadMarket(source, !!body.force));
+    }
 
     if (path === '/api/library' || path === '/api/library.js') {
       const lib = state.lib || { version: BUILD, cats: [], stats: {}, databases: [] };
@@ -3172,6 +3330,7 @@
 
   window.WB64 = {
     BUILD,
+    remote: REMOTE,
     ready,
     state,
     reset() { return storageReset(); },
