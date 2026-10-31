@@ -153,8 +153,11 @@
       ((d.tags && d.tags.length) ? '<div class="draft-row-tags">' + d.tags.map((t) => '<span>' + U.esc(t) + '</span>').join('') + '</div>' : '') +
       '</div>' +
       '<div class="draft-row-side">' +
-      '<button class="btn sm primary" data-da="open" data-id="' + U.esc(d.id) + '">继续写</button>' +
-      '<button class="btn sm" data-da="publish" data-id="' + U.esc(d.id) + '">收入文库</button>' +
+      (published
+        ? '<button class="btn sm primary" data-da="continue" data-id="' + U.esc(d.id) + '">继续写文章</button>' +
+          '<button class="btn sm" data-da="snapshot" data-id="' + U.esc(d.id) + '">看快照</button>'
+        : '<button class="btn sm primary" data-da="open" data-id="' + U.esc(d.id) + '">继续写</button>' +
+          '<button class="btn sm" data-da="publish" data-id="' + U.esc(d.id) + '">收入文库</button>') +
       '<button class="icon-btn sm" data-da="download" data-id="' + U.esc(d.id) + '" title="下载 Markdown">' + U.icon('download') + '</button>' +
       '<button class="icon-btn sm danger" data-da="delete" data-id="' + U.esc(d.id) + '" title="删除草稿">' + U.icon('trash') + '</button>' +
       '</div></div>';
@@ -215,6 +218,11 @@
         if (act === 'new') { newDraft(); return; }
         if (!draft) return;
         if (act === 'open') { openDraft(id); return; }
+        if (act === 'continue') { openDraft(id); return; }
+        if (act === 'snapshot') {
+          if (window.Immersive) window.Immersive.openDraft(id, { returnTo: '#/drafts' });
+          return;
+        }
         if (act === 'publish') { openPublishDraft(draft, () => { renderDrafts(); }); return; }
         if (act === 'download') {
           U.download(safeFileName(draft.title || '草稿') + '.md', '# ' + (draft.title || '无题') + '\n\n' + (draft.markdown || ''), 'text/markdown');
@@ -262,6 +270,12 @@
   }
 
   async function openDraft(id) {
+    if (window.Immersive) {
+      const known = findDraft(id);
+      if (known && known.publishedId) window.Immersive.openDoc(known.publishedId, { returnTo: '#/drafts' });
+      else window.Immersive.openDraft(id, { returnTo: '#/drafts' });
+      return;
+    }
     flushDraftEditor();
     window.Lib.render('<div class="hub hub-draft">' + hubLoading('正在打开草稿…') + '</div>');
     let draft = findDraft(id);
@@ -495,52 +509,27 @@
   }
 
   function openPublishDraft(draft, after) {
+    if (!window.MetaPicker) { U.toast('「存到哪里」选择器没有载入', 'alert'); return; }
     const title = String(draft.title || '').trim() || '无题';
-    const guessType = '资料';
-    const m = U.openModal(
-      '<div class="modal-head"><div><h3>收入文库</h3><p>草稿会变成一篇 md，出现在目录与写作台导图里。原草稿保留，并标记已收入。</p></div></div>' +
-      '<div class="modal-body">' +
-      '<div class="field"><label>标题</label><input class="input" id="pubDraftTitle" value="' + U.esc(title) + '" maxlength="120"></div>' +
-      '<div class="field"><label>类型</label><select class="input" id="pubDraftType">' +
-      ['小说', '资料', '素材', '毕设'].map((t) => '<option' + (t === guessType ? ' selected' : '') + '>' + t + '</option>').join('') +
-      '</select></div>' +
-      '<div class="row"><div class="field grow"><label id="pubDraftGroupLabel">分类</label><input class="input" id="pubDraftGroup" value="随笔" placeholder="分类 / 作品"></div>' +
-      '<div class="field grow"><label id="pubDraftSubLabel">子类</label><input class="input" id="pubDraftSub" value="未分类" placeholder="子类 / 卷"></div></div>' +
-      '<div class="field"><label>标签（逗号分隔）</label><input class="input" id="pubDraftTags" value="' + U.esc((draft.tags || []).join('，')) + '"></div>' +
-      '<div class="field"><label>状态</label><select class="input" id="pubDraftStatus"><option>草稿</option><option>定稿</option></select></div>' +
-      '</div>' +
-      '<div class="modal-foot"><span class="hint">' + U.fmt(wordsOf(draft.markdown)) + ' 字 · 创建于 ' + U.esc(fmtDate(draft.createdAt)) + '</span>' +
-      '<div class="foot-actions"><button class="btn ghost" data-cancel>取消</button><button class="btn primary" data-ok>收入文库</button></div></div>',
-      'wide'
-    );
-    const typeEl = m.box.querySelector('#pubDraftType');
-    const syncLabels = () => {
-      const novel = typeEl.value === '小说';
-      m.box.querySelector('#pubDraftGroupLabel').textContent = novel ? '作品' : '分类';
-      m.box.querySelector('#pubDraftSubLabel').textContent = novel ? '卷' : '子类';
-      m.box.querySelector('#pubDraftGroup').placeholder = novel ? '作品名' : '分类';
-      m.box.querySelector('#pubDraftSub').placeholder = novel ? '卷名' : '子类';
-    };
-    typeEl.onchange = syncLabels;
-    syncLabels();
-    m.box.querySelector('[data-cancel]').onclick = m.close;
-    m.ov.onclick = (e) => { if (e.target === m.ov) m.close(); };
-    m.box.querySelector('[data-ok]').onclick = async (e) => {
-      const btn = e.currentTarget;
-      const pubTitle = m.box.querySelector('#pubDraftTitle').value.trim();
-      if (!pubTitle) { U.toast('标题不能为空', 'alert'); return; }
-      const type = typeEl.value;
-      const group = m.box.querySelector('#pubDraftGroup').value.trim() || (type === '小说' ? '未分类' : '随笔');
-      const sub = m.box.querySelector('#pubDraftSub').value.trim();
-      const tags = m.box.querySelector('#pubDraftTags').value.split(/[,，、]/).map((x) => x.trim()).filter(Boolean);
-      const status = m.box.querySelector('#pubDraftStatus').value;
-      const cats = type === '小说'
-        ? ['正文', group, sub || '未分卷']
-        : [type, group, sub || ''];
-      busy(btn, true, '收入中…');
-      try {
-        const result = await api().publishDraft(draft.id, { title: pubTitle, type, cats, tags, status });
-        m.close();
+    window.MetaPicker.open({
+      heading: '收入文库',
+      desc: '草稿会变成一篇文库文章，写作台也会看到。收入后这份草稿变成只读快照，继续写请打开文章。',
+      showTitle: true,
+      title,
+      type: '资料',
+      group: '随笔',
+      tags: draft.tags || [],
+      status: '草稿',
+      statuses: ['草稿', '待定', '定稿'],
+      okText: '收入文库',
+      note: U.fmt(wordsOf(draft.markdown)) + ' 字 · 创建于 ' + fmtDate(draft.createdAt),
+      onConfirm: async (v) => {
+        const cats = v.type === '小说'
+          ? ['正文', v.group, v.sub || '未分卷']
+          : [v.type, v.group, v.sub || ''];
+        const result = await api().publishDraft(draft.id, {
+          dbId: v.dbId, title: v.title, type: v.type, cats, tags: v.tags, status: v.status
+        });
         draft.publishedId = result.article.id;
         const idx = draftCache.findIndex((x) => x.id === draft.id);
         if (idx > -1) draftCache[idx] = result.draft;
@@ -548,11 +537,9 @@
         if (window.Gen6Bridge) window.Gen6Bridge.refreshLibrary({ silent: true, delay: 120 });
         if (window.Gen6Projects) window.Gen6Projects.syncAll({ quiet: true }).catch(() => {});
         if (after) after(result.article);
-      } catch (error) {
-        busy(btn, false);
-        U.toast(errText(error), 'alert');
+        return true;
       }
-    };
+    });
   }
 
   /* ============================================================
@@ -1871,7 +1858,7 @@
   }
 
   window.Hub = {
-    drafts, newDraft, draftEditor: openDraft, plugins, settings,
+    drafts, newDraft, draftEditor: openDraft, openPublishDraft, plugins, settings,
     refreshDrafts: drafts,
     get draftState() { return draftState; }
   };

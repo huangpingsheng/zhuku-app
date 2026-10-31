@@ -81,7 +81,8 @@
         '<div class="cat-main" data-open-cat="' + cat.id + '">' +
         '<span class="dot" style="background:' + cat.color + '"></span>' +
         '<span class="cat-name' + ((r === '/c/' + cat.id) ? ' active' : '') + '">' + U.esc(cat.name) + '</span>' +
-        '<span class="cat-count">' + total + '</span></div></div>';
+        '<span class="cat-count">' + total + '</span></div>' +
+        '<button class="tree-plus" data-new-in="' + cat.id + '" title="在这里写一篇" aria-label="在这里写一篇">' + U.icon('plus') + '</button></div>';
       if (open) {
         h += '<div class="sub-tree">';
         cat.subs.forEach((sub, si) => {
@@ -89,7 +90,8 @@
           const files = sub.files;
           h += '<div class="sub-row' + (subCurrent(cat.id, sub.id) ? ' active' : '') + '">' +
             '<button class="ot-caret' + (sopen ? ' open' : '') + (files.length ? '' : ' leaf') + '" data-toggle-sub="' + cat.id + '/' + sub.id + '">' + U.icon('chevronRight') + '</button>' +
-            '<div class="sub-main" data-open-sub="' + cat.id + '/' + sub.id + '"><span class="sub-name">' + U.esc(sub.name) + '</span><span class="sub-count">' + files.length + '</span></div></div>';
+            '<div class="sub-main" data-open-sub="' + cat.id + '/' + sub.id + '"><span class="sub-name">' + U.esc(sub.name) + '</span><span class="sub-count">' + files.length + '</span></div>' +
+            '<button class="tree-plus sm" data-new-in="' + cat.id + '/' + sub.id + '" title="在这里写一篇" aria-label="在这里写一篇">' + U.icon('plus') + '</button></div>';
           if (sopen) {
             h += '<div class="file-tree">';
             files.forEach((f) => {
@@ -137,6 +139,8 @@
       ((rec.tags && rec.tags.length) ? '<div class="ar-tags">' + rec.tags.slice(0, 4).map((t) => '<span>' + U.esc(t) + '</span>').join('') + '</div>' : '') +
       '</div>' +
       '<div class="ar-side">' +
+      '<button class="ar-grip" type="button" data-drag-article="' + rec.id + '" title="拖动到左侧分类目录" aria-label="拖动到分类目录">' + U.icon('grip') + '</button>' +
+      '<button class="star-btn ar-write" data-write="' + rec.id + '" title="沉浸写作">' + U.icon('pen') + '</button>' +
       '<button class="star-btn ' + (star ? 'on' : '') + '" data-star="' + rec.id + '" title="收藏">' + U.icon(star ? 'starFill' : 'star') + '</button>' +
       (read ? '<span class="ar-check">' + U.icon('check') + '</span>' : '') +
       '</div></div>';
@@ -543,6 +547,7 @@
   function listPage(opts) {
     const rows = opts.files;
     let h = pageHead(opts.crumb, opts.title, opts.sub, opts.actions);
+    if (opts.cta) h += opts.cta;
     if (!rows.length) {
       h += emptyBox(opts.emptyTitle || '这里还没有内容', opts.emptyDesc || '', opts.emptyIcon || 'book');
     } else {
@@ -562,6 +567,17 @@
     render(h);
   }
 
+  function writeCta(catId, subId) {
+    const cat = D.cat(catId);
+    const sub = subId ? D.sub(catId, subId) : null;
+    const where = [cat ? cat.name : '', sub ? sub.name : ''].filter(Boolean).join(' / ');
+    return '<button class="write-cta" data-act="new-here" data-cat="' + U.esc(catId) + '"' +
+      (subId ? ' data-sub="' + U.esc(subId) + '"' : '') + '>' +
+      '<span class="wc-ico">' + U.icon('plus') + '</span>' +
+      '<span class="wc-main"><b>在这里写一篇</b><span>' + U.esc(where) + ' · 保存后直接出现在这个目录</span></span>' +
+      '<span class="wc-go">' + U.icon('chevronRight') + '</span></button>';
+  }
+
   function catView(catId) {
     D.init();
     const cat = D.cat(catId);
@@ -578,10 +594,11 @@
       crumb: '<a href="#/">写作库</a>' + U.icon('chevronRight') + '<span class="crumb-db" style="--db:' + (cat.dbColor || '#8A9099') + '">' + U.esc(cat.dbName || '') + '</span>' + U.icon('chevronRight') + '<span>' + U.esc(cat.name) + '</span>',
       title: U.esc(cat.name),
       sub: '<span class="pill">' + files.length + ' 篇</span><span class="pill">' + U.fmt(words) + ' 字</span><span class="pill">' + cat.subs.length + ' 个子类</span>',
-      actions: '<button class="btn sm dark" data-act="new-here" data-cat="' + catId + '">' + U.icon('plus') + '新建文章</button>' +
+      actions: '<button class="btn sm dark" data-act="new-here" data-cat="' + catId + '">' + U.icon('plus') + '写一篇</button>' +
         '<button class="btn sm" data-act="random-cat">' + U.icon('compass') + '本类随机</button>' +
         '<button class="btn sm" data-act="export-dir" data-cat="' + catId + '">' + U.icon('download') + '导出 ZIP</button>' +
         '<button class="btn sm danger" data-act="delete-dir" data-cat="' + catId + '">' + U.icon('trash') + '删除目录</button>',
+      cta: writeCta(catId, null),
       files: files,
       group: true
     });
@@ -603,10 +620,11 @@
       crumb: '<a href="#/">写作库</a>' + U.icon('chevronRight') + '<span class="crumb-db" style="--db:' + (cat.dbColor || '#8A9099') + '">' + U.esc(cat.dbName || '') + '</span>' + U.icon('chevronRight') + '<a href="#/c/' + catId + '">' + U.esc(cat.name) + '</a>' + U.icon('chevronRight') + '<span>' + U.esc(sub.name) + '</span>',
       title: U.esc(sub.name),
       sub: '<span class="pill">' + files.length + ' 篇</span><span class="pill">' + U.fmt(words) + ' 字</span>',
-      actions: '<button class="btn sm dark" data-act="new-here" data-cat="' + catId + '" data-sub="' + subId + '">' + U.icon('plus') + '新建文章</button>' +
+      actions: '<button class="btn sm dark" data-act="new-here" data-cat="' + catId + '" data-sub="' + subId + '">' + U.icon('plus') + '写一篇</button>' +
         '<button class="btn sm" data-act="random-cat">' + U.icon('compass') + '本类随机</button>' +
         '<button class="btn sm" data-act="export-dir" data-cat="' + catId + '" data-sub="' + subId + '">' + U.icon('download') + '导出 ZIP</button>' +
         '<button class="btn sm danger" data-act="delete-dir" data-cat="' + catId + '" data-sub="' + subId + '">' + U.icon('trash') + '删除子目录</button>',
+      cta: writeCta(catId, subId),
       files: files
     });
   }
@@ -828,6 +846,7 @@
   /* ---------------- common bindings ---------------- */
   function bindCommon(root) {
     bindCross(root);
+    bindArticleDrag(root);
     root.querySelectorAll('[data-db-filter]').forEach((el) => {
       el.addEventListener('click', (e) => {
         e.preventDefault();
@@ -879,11 +898,18 @@
     }
     root.querySelectorAll('[data-file]').forEach((el) => {
       el.addEventListener('click', (e) => {
-        if (e.target.closest('[data-star]')) return;
+        if (e.target.closest('[data-star],[data-write],[data-drag-article]')) return;
         const id = el.getAttribute('data-file');
         if (!id) return;
         if (el.classList.contains('side-row')) closeDrawer();
         nav('/a/' + encodeURIComponent(id));
+      });
+    });
+    root.querySelectorAll('[data-write]').forEach((el) => {
+      el.addEventListener('click', (e) => {
+        e.stopPropagation(); e.preventDefault();
+        const id = el.getAttribute('data-write');
+        if (id && window.Immersive) window.Immersive.openDoc(id, { returnTo: location.hash || '#/' });
       });
     });
     root.querySelectorAll('[data-star]').forEach((el) => {
@@ -937,6 +963,237 @@
     });
   }
 
+  /* ---------------- drag article to category ---------------- */
+  function bindArticleDrag(root) {
+    if (root.__articleDragBound) return;
+    root.__articleDragBound = true;
+    let drag = null, ghost = null, hover = null;
+
+    const clearHover = () => {
+      if (hover && hover.el) hover.el.classList.remove('drop-on');
+      hover = null;
+    };
+    const paintGhost = (label) => {
+      if (!ghost || !drag) return;
+      ghost.innerHTML = U.icon(label ? 'folder' : 'doc') + '<span>' + U.esc(drag.rec.title) + '</span>' +
+        (label ? '<b>' + U.esc(label) + '</b>' : '');
+    };
+    const placeGhost = (x, y) => {
+      if (!ghost) return;
+      const w = ghost.offsetWidth || 220;
+      const left = x + 16 + w > window.innerWidth - 8 ? x - w - 16 : x + 16;
+      ghost.style.left = Math.max(8, left) + 'px';
+      ghost.style.top = Math.max(8, Math.min(y + 14, window.innerHeight - 56)) + 'px';
+    };
+    const targetAt = (x, y) => {
+      const under = document.elementFromPoint(x, y);
+      if (!under || !under.closest('#sideScroll')) return null;
+      const sub = under.closest('[data-open-sub]');
+      if (sub) {
+        const v = sub.getAttribute('data-open-sub').split('/');
+        const cat = D.cat(v[0]);
+        if (!cat) return null;
+        const subRec = D.sub(v[0], v[1]);
+        if (!subRec) return null;
+        return { kind: 'sub', catId: v[0], subId: v[1], label: cat.name + ' / ' + subRec.name, el: sub.closest('.sub-row') || sub };
+      }
+      const catEl = under.closest('[data-cat]');
+      if (catEl) {
+        const cat = D.cat(catEl.getAttribute('data-cat'));
+        if (cat) return { kind: 'cat', catId: cat.id, label: cat.name, el: catEl };
+      }
+      return null;
+    };
+    const dropOn = (t) => {
+      if (!drag || !t) { clearHover(); paintGhost(''); return; }
+      const cat = D.cat(t.catId);
+      if (!cat || cat.type !== drag.rec.type) { clearHover(); paintGhost(''); return; }
+      if (hover && hover.el === t.el) return;
+      clearHover();
+      hover = t;
+      t.el.classList.add('drop-on');
+      paintGhost(t.label);
+    };
+    const cleanup = () => {
+      clearHover();
+      if (ghost) { ghost.remove(); ghost = null; }
+      document.body.classList.remove('dragging-article');
+      drag = null;
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onCancel);
+      window.removeEventListener('keydown', onKey);
+    };
+    const finish = () => {
+      const d = drag, t = hover;
+      cleanup();
+      if (!d || !d.active) return;
+      if (!t) { U.toast('把文章拖到左侧的分类或子类上再松手', 'info'); return; }
+      openDropConfirm(d.rec, t);
+    };
+    const onMove = (e) => {
+      if (!drag) return;
+      if (!drag.active) {
+        if (Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) < 8) return;
+        drag.active = true;
+        ghost = document.createElement('div');
+        ghost.className = 'art-drag-ghost';
+        paintGhost('');
+        document.body.appendChild(ghost);
+        document.body.classList.add('dragging-article');
+      }
+      e.preventDefault();
+      placeGhost(e.clientX, e.clientY);
+      dropOn(targetAt(e.clientX, e.clientY));
+    };
+    const onUp = (e) => { if (!drag) return; if (drag.active) { e.preventDefault(); finish(); } else cleanup(); };
+    const onCancel = () => cleanup();
+    const onKey = (e) => { if (e.key === 'Escape') cleanup(); };
+
+    root.addEventListener('pointerdown', (e) => {
+      const grip = e.target.closest('[data-drag-article]');
+      if (!grip) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const rec = D.get(grip.getAttribute('data-drag-article'));
+      if (!rec) return;
+      drag = { rec, sx: e.clientX, sy: e.clientY, active: false };
+      window.addEventListener('pointermove', onMove, { passive: false });
+      window.addEventListener('pointerup', onUp);
+      window.addEventListener('pointercancel', onCancel);
+      window.addEventListener('keydown', onKey);
+    });
+    root.addEventListener('click', (e) => {
+      if (!e.target.closest('[data-drag-article]')) return;
+      e.preventDefault();
+      e.stopPropagation();
+    }, true);
+  }
+
+  function openDropConfirm(rec, t) {
+    const cat = D.cat(t.catId);
+    if (!cat) return;
+    const subs = cat.subs.slice();
+    let sub = t.kind === 'sub' ? D.sub(t.catId, t.subId) : subs[0];
+    if (!sub) { U.toast('这个分类还没有子类，先在里面写一篇会自动建子类', 'info'); return; }
+    if (rec.catId === cat.id && rec.subId === sub.id) { U.toast('已经在这个目录里了', 'info'); return; }
+    const db = D.db(cat.dbId);
+    const from = (rec.dbShort ? rec.dbShort + ' / ' : '') + rec.catName + ' / ' + (rec.subName || '未分卷');
+    const to = (db && db.short ? db.short + ' / ' : '') + cat.name;
+    const m = U.openModal(
+      '<div class="modal-head"><div><h3>移动这篇文章</h3>' +
+      '<p>只改目录和 md 路径，标题、正文、标签都不变。</p></div></div>' +
+      '<div class="modal-body">' +
+      '<div class="drop-line">' + U.icon('doc') + '<span>' + U.esc(rec.title) + '</span></div>' +
+      '<p class="hint">' + U.esc(from) + ' → ' + U.esc(to) + '</p>' +
+      (subs.length > 1
+        ? '<div class="field"><label>放到哪个' + (cat.type === '小说' ? '卷' : '子类') + '</label><select class="input" id="dropSub">' +
+          subs.map((s) => '<option value="' + s.id + '"' + (s.id === sub.id ? ' selected' : '') + '>' + U.esc(s.name) + '</option>').join('') +
+          '</select></div>'
+        : '<p class="hint">子类：' + U.esc(sub.name) + '</p>') +
+      '</div>' +
+      '<div class="modal-foot"><div class="foot-actions"><button class="btn ghost" data-cancel>取消</button>' +
+      '<button class="btn primary" data-ok>移到这里</button></div></div>'
+    );
+    const okBtn = m.box.querySelector('[data-ok]');
+    m.box.querySelector('[data-cancel]').onclick = m.close;
+    m.ov.onclick = (e) => { if (e.target === m.ov) m.close(); };
+    okBtn.onclick = async () => {
+      const sel = m.box.querySelector('#dropSub');
+      const targetSub = sel ? (subs.find((s) => s.id === sel.value) || sub) : sub;
+      okBtn.disabled = true;
+      okBtn.textContent = '移动中…';
+      try {
+        await window.Gen6Api.update(rec.id, {
+          title: rec.title,
+          type: rec.type,
+          cats: [rec.type, cat.name, targetSub.name],
+          tags: (rec.tags && rec.tags.length) ? rec.tags : [targetSub.name],
+          status: rec.status,
+          baseHash: rec.bodyHash,
+          dbId: cat.dbId || rec.dbId,
+          note: '拖动到 ' + cat.name + ' / ' + targetSub.name
+        });
+        m.close();
+        U.toast('已移到 ' + cat.name + ' / ' + targetSub.name, 'check');
+        await window.Gen6Bridge.refreshLibrary({ silent: true, delay: 40 });
+        if (window.Gen6Projects) window.Gen6Projects.syncAll({ quiet: true }).catch(() => {});
+        if (window.App && window.App.route) window.App.route();
+      } catch (error) {
+        okBtn.disabled = false;
+        okBtn.textContent = '移到这里';
+        if (error.status === 409 && error.data && error.data.code === 'FROZEN') U.toast('已发布或已归档的文章是冻结的，先把状态改成定稿再移动', 'lock');
+        else U.toast(error.message || '移动失败', 'alert');
+      }
+    };
+  }
+
+  /* ---------------- rename category / sub ---------------- */
+  function renameFolder(kind, catId, subId) {
+    const cat = D.cat(catId);
+    const sub = kind === 'sub' ? D.sub(catId, subId) : null;
+    if (!cat || (kind === 'sub' && !sub)) return;
+    const oldName = kind === 'sub' ? sub.name : cat.name;
+    const label = kind === 'sub' ? (cat.type === '小说' ? '卷' : '子类') : '分类';
+    const rows = D.files.filter((f) => f.catId === catId && (kind === 'cat' || f.subId === subId));
+    const m = U.openModal(
+      '<div class="modal-head"><div><h3>重命名' + label + '「' + U.esc(oldName) + '」</h3>' +
+      '<p>' + rows.length + ' 篇文章会一起改到新名字，md 目录也会跟着移动。每篇会先保留一份「改动前」版本，可在版本历史里找回。</p></div></div>' +
+      '<div class="modal-body">' +
+      '<div class="field"><label>新的' + label + '名</label><input class="input" id="rnName" maxlength="40" value="' + U.esc(oldName) + '" autocomplete="off"></div>' +
+      '<p class="hint">原来的「' + U.esc(oldName) + '」目录会消失，所有文章一起改名，不会漏下。</p>' +
+      '</div>' +
+      '<div class="modal-foot"><div class="foot-actions"><button class="btn ghost" data-cancel>取消</button>' +
+      '<button class="btn primary" data-ok>改名</button></div></div>'
+    );
+    const input = m.box.querySelector('#rnName');
+    const okBtn = m.box.querySelector('[data-ok]');
+    input.focus();
+    input.select();
+    m.box.querySelector('[data-cancel]').onclick = m.close;
+    m.ov.onclick = (e) => { if (e.target === m.ov) m.close(); };
+    const submit = async () => {
+      const name = input.value.replace(/[\r\n]+/g, ' ').trim();
+      if (!name) { U.toast('名字不能为空', 'info'); input.focus(); return; }
+      if (name === oldName) { m.close(); return; }
+      if (/[\\/:*?"<>|]/.test(name)) { U.toast('名字里不能有 \\ / : * ? " < > |', 'alert'); input.focus(); return; }
+      const dup = kind === 'cat'
+        ? D.cats.some((c) => c.id !== cat.id && c.name === name && c.type === cat.type && (c.dbId || '') === (cat.dbId || ''))
+        : cat.subs.some((s) => s.id !== sub.id && s.name === name);
+      if (dup) { U.toast('这个名字已经存在了', 'info'); input.focus(); return; }
+      okBtn.disabled = true;
+      okBtn.textContent = '改名中…';
+      try {
+        const res = await window.Gen6Api.renameDirectory({
+          kind, dbId: cat.dbId || '', type: cat.type,
+          oldName: kind === 'sub' ? cat.name : oldName,
+          newName: name,
+          subName: sub ? sub.name : ''
+        });
+        m.close();
+        U.toast('已重命名 ' + ((res && res.count) || rows.length) + ' 篇', 'check');
+        await window.Gen6Bridge.refreshLibrary({ silent: true, delay: 40 });
+        if (window.Gen6Projects) window.Gen6Projects.syncAll({ quiet: true }).catch(() => {});
+        const newCat = D.cats.find((c) => c.name === (kind === 'cat' ? name : cat.name) && c.type === cat.type && (c.dbId || '') === (cat.dbId || ''));
+        const newSub = newCat && kind === 'sub' ? newCat.subs.find((s) => s.name === name) : null;
+        const r = route();
+        if (newCat && (r === '/c/' + catId || r.indexOf('/s/' + catId + '/') === 0)) {
+          if (kind === 'sub' && newSub) nav('/s/' + newCat.id + '/' + newSub.id);
+          else nav('/c/' + newCat.id);
+        } else if (window.App && window.App.route) {
+          window.App.route();
+        }
+      } catch (error) {
+        okBtn.disabled = false;
+        okBtn.textContent = '改名';
+        U.toast(error.message || '重命名失败', 'alert');
+        input.focus();
+      }
+    };
+    okBtn.onclick = submit;
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); submit(); } });
+  }
+
   function currentCatId() {
     const r = route();
     const m = r.match(/^\/[cs]\/([^/]+)/);
@@ -984,7 +1241,7 @@
 
   function newArticleIn(catId, subId) {
     const cat = D.cat(catId);
-    if (!cat) { window.App.openDraft(); return; }
+    if (!cat) { chooseWhereToWrite(); return; }
     const sub = subId ? D.sub(catId, subId) : null;
     window.Gen6Bridge.newArticle({
       type: cat.type,
@@ -994,12 +1251,47 @@
     });
   }
 
+  function chooseWhereToWrite() {
+    const r = route();
+    const m = r.match(/^\/s\/([^/]+)\/([^/]+)/);
+    if (m && D.cat(m[1])) { newArticleIn(m[1], m[2]); return; }
+    const c = r.match(/^\/c\/([^/]+)/);
+    if (c && D.cat(c[1])) { newArticleIn(c[1], null); return; }
+    if (!window.MetaPicker) { window.App.openDraft(); return; }
+    const last = window.lsGet('6.lastMeta', null) || {};
+    const types = ['小说', '资料', '素材', '毕设'];
+    window.MetaPicker.open({
+      heading: '在哪里写新文章',
+      desc: '先选库、分类和子类，确定后进入满屏写作；写完保存，文章会直接落在这个目录，写作台也会同步。',
+      showTitle: false,
+      statuses: false,
+      dbId: last.dbId && D.db(last.dbId) ? last.dbId : '',
+      type: types.includes(last.type) ? last.type : '资料',
+      group: last.group || '随笔',
+      sub: last.sub,
+      okText: '开始写',
+      note: '分类或子类里没有想要的，可以现场新建',
+      onConfirm: async (v) => {
+        window.Gen6Bridge.newArticle({
+          dbId: v.dbId,
+          type: v.type,
+          group: v.group,
+          sub: v.sub,
+          nosub: v.sub ? '' : '1',
+          fresh: '1'
+        });
+        return true;
+      }
+    });
+  }
+
   function catMenu(x, y, catId) {
     const cat = D.cat(catId);
     if (!cat) return;
     rowMenu(x, y, [
       { label: '在「' + cat.name + '」新建文章', icon: 'plus', fn: () => newArticleIn(catId, null) },
       { label: '打开目录', icon: 'folder', fn: () => nav('/c/' + catId) },
+      { label: '重命名分类', icon: 'pen', fn: () => renameFolder('cat', catId) },
       { label: '本类随机一篇', icon: 'compass', fn: () => randomFile(catId) },
       { sep: true },
       { label: '导出这个目录（ZIP）', icon: 'download', fn: () => window.DocActions.exportDirectory(catId, null) },
@@ -1014,6 +1306,7 @@
     rowMenu(x, y, [
       { label: '在「' + sub.name + '」新建文章', icon: 'plus', fn: () => newArticleIn(catId, subId) },
       { label: '打开子类', icon: 'folder', fn: () => nav('/s/' + catId + '/' + subId) },
+      { label: '重命名' + (cat.type === '小说' ? '卷' : '子类'), icon: 'pen', fn: () => renameFolder('sub', catId, subId) },
       { label: '本类随机一篇', icon: 'compass', fn: () => randomFile(catId) },
       { sep: true },
       { label: '导出这个子目录（ZIP）', icon: 'download', fn: () => window.DocActions.exportDirectory(catId, subId) },
@@ -1074,6 +1367,13 @@
     let suppressClick = false;
     box.addEventListener('click', (e) => {
       if (suppressClick) { suppressClick = false; e.preventDefault(); e.stopPropagation(); return; }
+      const newIn = e.target.closest('[data-new-in]');
+      if (newIn) {
+        e.preventDefault(); e.stopPropagation();
+        const v = newIn.getAttribute('data-new-in').split('/');
+        newArticleIn(v[0], v[1] || null);
+        return;
+      }
       const dbFilter = e.target.closest('[data-db-filter]');
       if (dbFilter) { e.preventDefault(); applyDbFilter(dbFilter.getAttribute('data-db-filter')); return; }
       const dbManage = e.target.closest('[data-db-manage]');
@@ -1111,7 +1411,7 @@
       const act = e.target.closest('[data-side]');
       if (act) {
         const a = act.getAttribute('data-side');
-        if (a === 'new') { newArticleIn(currentCatId(), null); return; }
+        if (a === 'new') { chooseWhereToWrite(); return; }
         if (a === 'clear-recent') { C.recent = []; C.saveRecent(); renderSide(); U.toast('最近打开已清空'); }
         if (a === 'collapse-all') { treeState = { cats: {}, subs: {} }; saveTree(); renderSide(); }
       }

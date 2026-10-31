@@ -47,6 +47,7 @@
     h += '<div class="reader-top"><a class="back" href="' + backTarget(rec) + '">' + U.icon('arrowLeft') + ' ' + U.esc(rec.subName) + '</a>';
     h += '<div class="reader-actions" id="readerActions">' +
       actionBtn('pen', editing ? '完成' : '编辑', 'data-ra="edit"', editing ? 'accent' : '') +
+      actionBtn('feather', '沉浸写作', 'data-ra="imm"', 'accent') +
       actionBtn(star ? 'starFill' : 'star', star ? '已收藏' : '收藏', 'data-ra="star"', star ? 'on' : '') +
       actionBtn(read ? 'check' : 'circle', read ? '已读' : '标记已读', 'data-ra="read"', read ? 'accent' : '') +
       actionBtn('tree', '进导图', 'data-ra="map"') +
@@ -142,6 +143,12 @@
           open(rec.id);
         } else if (act === 'edit') {
           toggleEdit(rec);
+        } else if (act === 'imm') {
+          const go = () => {
+            if (window.Immersive) window.Immersive.openDoc(rec.id, { returnTo: location.hash || ('#/a/' + encodeURIComponent(rec.id)) });
+          };
+          if (editing && flushEdit) flushEdit().then((ok) => { if (ok !== false) go(); });
+          else go();
         } else if (act === 'map') {
           openInMap(rec);
         } else if (act === 'export') {

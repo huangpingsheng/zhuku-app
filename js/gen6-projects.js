@@ -144,7 +144,9 @@
     const map = new Map();
     S.projects.forEach((p) => {
       (p.nodes || []).forEach((n) => {
-        if (n.docId) map.set(n.docId, { project: p, node: n });
+        if (!n.docId) return;
+        if (!map.has(n.docId)) map.set(n.docId, []);
+        map.get(n.docId).push({ project: p, node: n });
       });
     });
     return map;
@@ -198,14 +200,19 @@
       return { p, node, created: true };
     }
     node.parents = parentId ? [parentId] : [];
+    let updated = false;
     if (!nodeIsOpen(node)) {
-      node.title = rec.title;
-      node.body = rec.html || U.textToHtml(rec.text || '');
-      node.docHash = rec.bodyHash || node.docHash;
-      node.time = rec.created || node.time;
-      node.order = orders.get(rec.id) || node.order;
+      const nextBody = rec.html || U.textToHtml(rec.text || '');
+      if (node.title !== rec.title || node.body !== nextBody || (rec.bodyHash && node.docHash !== rec.bodyHash)) {
+        node.title = rec.title;
+        node.body = nextBody;
+        node.docHash = rec.bodyHash || node.docHash;
+        node.time = rec.created || node.time;
+        node.order = orders.get(rec.id) || node.order;
+        updated = true;
+      }
     }
-    return { p, node, created: false };
+    return { p, node, created: false, updated };
   }
 
   function tidyLayout(p) {
@@ -293,11 +300,28 @@
         const spec = specByKey.get(expected.specKey);
         if (!spec) return;
         const removedHit = removed.has(spec.key);
-        let hit = existing.get(rec.id);
-        if (hit && hit.project.libKey !== spec.key) {
-          hit.project.nodes = hit.project.nodes.filter((x) => x.id !== hit.node.id);
-          changed = true;
-          hit = null;
+        const hits = existing.get(rec.id) || [];
+        hits.forEach((h) => {
+          if (h.project.libKey && h.project.libKey !== spec.key) {
+            h.project.nodes = h.project.nodes.filter((x) => x.id !== h.node.id);
+            changed = true;
+          }
+        });
+        const mirror = hits.find((h) => h.project.libKey === spec.key && (h.project.nodes || []).some((x) => x.id === h.node.id));
+        const manual = hits.find((h) => !h.project.libKey);
+        let hit = mirror || manual;
+        if (hit && !hit.project.libKey) {
+          const n = hit.node;
+          if (!nodeIsOpen(n)) {
+            const nextBody = rec.html || U.textToHtml(rec.text || '');
+            if (n.title !== rec.title || n.body !== nextBody || (rec.bodyHash && n.docHash !== rec.bodyHash)) {
+              n.title = rec.title;
+              n.body = nextBody;
+              n.docHash = rec.bodyHash || n.docHash;
+              changed = true;
+            }
+          }
+          return;
         }
         if (!hit) {
           if (removedHit) return;
@@ -306,7 +330,7 @@
           hit = { project: p, node: null };
         }
         const result = addToProject(rec, hit, orders);
-        if (result.created) changed = true;
+        if (result.created || result.updated) changed = true;
       });
 
       const liveDocs = new Set(D.files.map((f) => f.id));

@@ -162,6 +162,7 @@
       el.style.setProperty('--nc', n.color || type.color);
       el.setAttribute('data-nid', n.id);
       el.innerHTML =
+        '<span class="node-grip" data-drag-node="' + n.id + '" title="按住这里拖动节点">' + U.icon('grip') + '</span>' +
         '<span class="node-bar"></span>' +
         '<div class="node-top"><span class="node-type">' + U.icon(type.icon) + type.label + '</span>' +
         (n.parents && n.parents.length > 1 ? '<span class="node-line">多父</span>' : (n.line === 'sub' ? '<span class="node-line">支线</span>' : '')) + '</div>' +
@@ -363,6 +364,8 @@
 
   /* ---------------- node interactions ---------------- */
   function bindNode(el, n, p) {
+    let armTimer = null;
+    const clearArm = () => { clearTimeout(armTimer); armTimer = null; };
     el.addEventListener('pointerdown', (e) => {
       if (e.button === 1 || e.button === 2) return;
       if (e.target.closest('[data-connect]')) return;
@@ -378,11 +381,18 @@
       const start = { x: e.clientX, y: e.clientY };
       const orig = { x: n.x, y: n.y };
       view.moved = false;
-      view.dragging = { id: n.id, el, start, orig };
-      el.setPointerCapture(e.pointerId);
-      el.classList.add('dragging');
       closePopoverUnlessPinned();
       clearTimeout(view.longTimer);
+      clearArm();
+      const beginDrag = () => {
+        if (view.dragging) return;
+        view.dragging = { id: n.id, el, start, orig };
+        try { el.setPointerCapture(e.pointerId); } catch (err) {}
+      };
+      if (e.target.closest('[data-drag-node]')) beginDrag();
+      else if (e.pointerType !== 'mouse') {
+        armTimer = setTimeout(() => { armTimer = null; beginDrag(); }, 250);
+      }
       view.longTimer = setTimeout(() => {
         if (view.dragging && !view.moved) {
           view.dragging = null;
@@ -398,10 +408,11 @@
       if (!d || d.id !== n.id) return;
       const dx = (e.clientX - d.start.x) / view.zoom;
       const dy = (e.clientY - d.start.y) / view.zoom;
-      if (!view.moved && Math.hypot(e.clientX - d.start.x, e.clientY - d.start.y) > 4) {
+      if (!view.moved && Math.hypot(e.clientX - d.start.x, e.clientY - d.start.y) > 8) {
         view.moved = true;
         view.pendingToggle = null;
         clearTimeout(view.longTimer);
+        el.classList.add('dragging');
       }
       if (!view.moved) return;
       n.x = Math.round(d.orig.x + dx);
@@ -414,6 +425,7 @@
     el.addEventListener('pointerup', (e) => {
       const d = view.dragging;
       clearTimeout(view.longTimer);
+      clearArm();
       if (!d || d.id !== n.id) return;
       el.classList.remove('dragging');
       view.dragging = null;
@@ -433,6 +445,7 @@
 
     el.addEventListener('pointercancel', () => {
       clearTimeout(view.longTimer);
+      clearArm();
       if (view.dragging) { view.dragging.el.classList.remove('dragging'); view.dragging = null; }
     });
 
@@ -872,7 +885,14 @@
     const multi = targets.length > 1;
     const allPinned = targets.every((id) => view.pinIds.has(id));
     const items = [
-      { label: n.type === 'vol' ? '查看这卷' : '进入写作', icon: 'pen', fn: () => { if (n.type === 'vol') { const c = S.sortedChapters(p)[0]; if (c) { collectSubtree(p, n.id); window.Editor.openNode(c.id); } } else window.Editor.openNode(n.id); } },
+      { label: n.type === 'vol' ? '写这卷的章节' : '满屏写作', icon: 'feather', fn: () => {
+        if (n.type === 'vol') {
+          const ids = collectSubtree(p, n.id);
+          const c = S.sortedChapters(p).find((x) => ids.has(x.id));
+          if (c) window.Editor.openNode(c.id);
+          else U.toast('这一卷下面还没有章节', 'info');
+        } else window.Editor.openNode(n.id);
+      } },
       { label: '重命名', icon: 'type', fn: () => renameNode(n, p) },
       { label: '添加子节点', icon: 'plus', fn: () => addChild(n, p) },
       { label: '添加同级', icon: 'list', fn: () => addSibling(n, p) },

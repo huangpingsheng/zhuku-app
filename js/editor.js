@@ -56,6 +56,7 @@
         '<span class="ed-words" id="edw-' + n.id + '">' + (S.nodeWords(n) ? U.fmt(S.nodeWords(n)) : '0') + ' 字</span>' +
         '<span class="ed-state" id="eds-' + n.id + '">已保存</span>' +
         '<div class="ed-tools">' +
+        '<button data-edimm="' + n.id + '" title="沉浸写作">' + U.icon('feather') + '</button>' +
         '<button data-edopen="' + n.id + '" title="在画布中定位">' + U.icon('compass') + '</button>' +
         (n.time ? '<button title="时间点：' + U.esc(n.time) + '" disabled style="opacity:.5">' + U.icon('clock') + '</button>' : '') +
         '<button data-edclose="' + n.id + '" title="关闭面板">' + U.icon('x') + '</button></div></div>' +
@@ -118,6 +119,16 @@
         window.Writer.updateStats();
       };
     });
+    host.querySelectorAll('[data-edimm]').forEach((b) => {
+      b.onclick = () => {
+        const id = b.getAttribute('data-edimm');
+        const n = p.nodes.find((x) => x.id === id);
+        if (!n) return;
+        const panel = host.querySelector('[data-edpanel="' + id + '"]');
+        if (panel) flushSave(n, panel);
+        if (window.Immersive) window.Immersive.openNode(id, p.id, { returnTo: '#/w/' + encodeURIComponent(p.id) });
+      };
+    });
     host.querySelectorAll('[data-edopen]').forEach((b) => {
       b.onclick = () => {
         const id = b.getAttribute('data-edopen');
@@ -166,8 +177,10 @@
         scheduleSave(n, panel);
       });
       body.addEventListener('paste', (e) => {
+        const cd = e.clipboardData || window.clipboardData;
+        const text = cd ? cd.getData('text/plain') : '';
+        if (!text) return;
         e.preventDefault();
-        const text = (e.clipboardData || window.clipboardData).getData('text/plain');
         document.execCommand('insertText', false, text);
       });
       body.addEventListener('keydown', (e) => {
@@ -249,23 +262,9 @@
 
   function openNode(id) {
     const p = window.Writer.getProject();
-    if (!p) return;
-    let n = p.nodes.find((x) => x.id === id);
-    if (!n) return;
-    if (n.type === 'vol') {
-      const child = S.sortedChapters(p).find((c) => (c.parents || []).includes(n.id)) || S.sortedChapters(p)[0];
-      if (!child) { U.toast('这一卷下面还没有章节', 'info'); return; }
-      n = child;
-    }
-    p.panels = p.panels || [];
-    if (!p.panels.includes(n.id)) p.panels.push(n.id);
-    window.Writer.state.selNode = n.id;
-    window.Writer.setView('editor');
-    window.Writer.selectNode(n.id);
-    setTimeout(() => {
-      const body = document.querySelector('[data-edbody="' + n.id + '"]');
-      if (body) body.focus();
-    }, 60);
+    if (!p || !window.Immersive) return;
+    window.Writer.state.selNode = id;
+    window.Immersive.openNode(id, p.id, { returnTo: '#/w/' + encodeURIComponent(p.id) });
   }
 
   window.Editor = { render, openNode, flushSave };

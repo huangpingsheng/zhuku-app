@@ -13,15 +13,15 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png" type="image/png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
-<link rel="stylesheet" href="css/base.css?v=6.4.2">
-<link rel="stylesheet" href="css/themes.css?v=6.4.2">
-<link rel="stylesheet" href="css/library.css?v=6.4.2">
-<link rel="stylesheet" href="css/writer.css?v=6.4.2">
-<link rel="stylesheet" href="css/gen6.css?v=6.4.2">
-<link rel="stylesheet" href="css/hub.css?v=6.4.2">
-<link rel="stylesheet" href="css/db.css?v=6.4.2">
-<link rel="stylesheet" href="css/focus-cursor.css?v=6.4.2">
-<link rel="stylesheet" href="css/dashboard.css?v=6.4.2">
+<link rel="stylesheet" href="css/base.css?v=6.4.4.1">
+<link rel="stylesheet" href="css/themes.css?v=6.4.4.1">
+<link rel="stylesheet" href="css/library.css?v=6.4.4.1">
+<link rel="stylesheet" href="css/writer.css?v=6.4.4.1">
+<link rel="stylesheet" href="css/gen6.css?v=6.4.4.1">
+<link rel="stylesheet" href="css/hub.css?v=6.4.4.1">
+<link rel="stylesheet" href="css/db.css?v=6.4.4.1">
+<link rel="stylesheet" href="css/focus-cursor.css?v=6.4.4.1">
+<link rel="stylesheet" href="css/dashboard.css?v=6.4.4.1">
 </head>
 <body>
 
@@ -106,6 +106,10 @@
       <button class="icon-btn" id="btnPanels" title="收起/展开面板">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M9 4.5v15M15 4.5v15"/></svg>
       </button>
+      <button class="tb-btn" id="btnNewChapter" title="新建章节并满屏写作">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+        <span>新章节</span>
+      </button>
       <button class="tb-btn" id="btnDraftW">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
         速写
@@ -166,6 +170,7 @@
 
 <!-- ============ 沉浸写作 ============ -->
 <div class="imm" id="immApp" hidden>
+  <button class="imm-focus-exit" id="immFocusExit" type="button" aria-label="退出专注">退出专注</button>
   <header class="imm-top" id="immTop">
     <div class="imm-top-left">
       <button class="icon-btn" id="immBack" title="返回">←</button>
@@ -192,6 +197,28 @@
     <datalist id="immGroupList"></datalist>
     <datalist id="immSubList"></datalist>
     <span class="inb-hint">输入标题或正文后自动创建 md</span>
+  </div>
+
+  <div class="imm-newbar imm-draftbar imm-bar" id="immDraftbar" data-bar="draftbar" hidden>
+    <span class="inb-label">草稿</span>
+    <span class="inb-state" id="immDraftState">自动保存 · 仅本机</span>
+    <span class="inb-note" id="immDraftHint">收入文库前只在本机草稿箱；收入后这份草稿会变成只读快照</span>
+    <div class="idb-actions">
+      <button class="btn sm" id="immDraftPublish">收入文库</button>
+      <button class="btn sm primary" id="immDraftContinue" hidden>继续写这篇文章</button>
+    </div>
+    <button class="imm-bar-toggle" type="button" data-bar-toggle="draftbar" aria-controls="immDraftHint" aria-expanded="false" title="展开说明">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+    </button>
+  </div>
+
+  <div class="imm-newbar imm-nodebar imm-bar" id="immNodebar" data-bar="nodebar" hidden>
+    <span class="inb-label">写作台章节</span>
+    <span class="inb-state" id="immNodeState">第一次保存时自动写进文库</span>
+    <span class="inb-note" id="immNodeHint"></span>
+    <button class="imm-bar-toggle" type="button" data-bar-toggle="nodebar" aria-controls="immNodeHint" aria-expanded="false" title="展开说明">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+    </button>
   </div>
 
   <main class="imm-stage" id="immStage">
@@ -283,29 +310,30 @@
 </div>
 
 <script src="data/library.js"></script>
-<script src="js/md.js?v=6.4.2"></script>
-<script src="js/github-api.js?v=6.4.2"></script>
-<script src="js/local-api.js?v=6.4.2"></script>
-<script src="js/util.js?v=6.4.2"></script>
-<script src="js/store.js?v=6.4.2"></script>
-<script src="js/workspace.js?v=6.4.2"></script>
-<script src="js/gen6-api.js?v=6.4.2"></script>
-<script src="js/theme-engine.js?v=6.4.2"></script>
-<script src="js/gen6-projects.js?v=6.4.2"></script>
-<script src="js/library.js?v=6.4.2"></script>
-<script src="js/hub.js?v=6.4.2"></script>
-<script src="js/doc-actions.js?v=6.4.2"></script>
-<script src="js/reader.js?v=6.4.2"></script>
-<script src="js/writer.js?v=6.4.2"></script>
-<script src="js/outline.js?v=6.4.2"></script>
-<script src="js/timeline.js?v=6.4.2"></script>
-<script src="js/editor.js?v=6.4.2"></script>
-<script src="js/assembly.js?v=6.4.2"></script>
-<script src="js/settings.js?v=6.4.2"></script>
-<script src="js/immersive.js?v=6.4.2"></script>
-<script src="js/focus-cursor.js?v=6.4.2"></script>
-<script src="js/dashboard.js?v=6.4.2"></script>
-<script src="js/app.js?v=6.4.2"></script>
-<script src="js/update-check.js?v=6.4.2"></script>
+<script src="js/md.js?v=6.4.4.1"></script>
+<script src="js/github-api.js?v=6.4.4.1"></script>
+<script src="js/local-api.js?v=6.4.4.1"></script>
+<script src="js/util.js?v=6.4.4.1"></script>
+<script src="js/store.js?v=6.4.4.1"></script>
+<script src="js/workspace.js?v=6.4.4.1"></script>
+<script src="js/gen6-api.js?v=6.4.4.1"></script>
+<script src="js/theme-engine.js?v=6.4.4.1"></script>
+<script src="js/gen6-projects.js?v=6.4.4.1"></script>
+<script src="js/meta-picker.js?v=6.4.4.1"></script>
+<script src="js/library.js?v=6.4.4.1"></script>
+<script src="js/hub.js?v=6.4.4.1"></script>
+<script src="js/doc-actions.js?v=6.4.4.1"></script>
+<script src="js/reader.js?v=6.4.4.1"></script>
+<script src="js/writer.js?v=6.4.4.1"></script>
+<script src="js/outline.js?v=6.4.4.1"></script>
+<script src="js/timeline.js?v=6.4.4.1"></script>
+<script src="js/editor.js?v=6.4.4.1"></script>
+<script src="js/assembly.js?v=6.4.4.1"></script>
+<script src="js/settings.js?v=6.4.4.1"></script>
+<script src="js/immersive.js?v=6.4.4.1"></script>
+<script src="js/focus-cursor.js?v=6.4.4.1"></script>
+<script src="js/dashboard.js?v=6.4.4.1"></script>
+<script src="js/app.js?v=6.4.4.1"></script>
+<script src="js/update-check.js?v=6.4.4.1"></script>
 </body>
 </html>

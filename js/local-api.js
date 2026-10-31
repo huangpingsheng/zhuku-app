@@ -9,7 +9,7 @@
   'use strict';
   if (window.WB64) return;
 
-  const BUILD = '6.4.2';
+  const BUILD = '6.4.4.1';
   const REMOTE = {
     owner: 'huangpingsheng',
     repo: 'zhuku-app',
@@ -2577,6 +2577,67 @@
     return { record: rec, moved: path !== oldPath, backup: { file: oldPath, at: nowIso() }, revision };
   }
 
+  async function renameDirectory(payload) {
+    const kind = payload.kind === 'sub' ? 'sub' : 'cat';
+    const type = String(payload.type || '').trim();
+    const dbId = String(payload.dbId || DB1);
+    const oldName = String(payload.oldName || '').replace(/[\r\n]+/g, ' ').trim();
+    const newName = String(payload.newName || '').replace(/[\r\n]+/g, ' ').trim();
+    const subName = String(payload.subName || '').trim();
+    if (!TYPES.includes(type)) throw apiError('类型不对', 400);
+    if (!oldName || !newName) throw apiError('名字不能为空', 400);
+    if (oldName === newName) throw apiError('新旧名字一样', 400);
+    if (newName.length > 40) throw apiError('名字最多 40 个字', 400);
+    if (/[\\/:*?"<>|]/.test(newName)) throw apiError('名字里不能有 \\ / : * ? " < > |', 400);
+    const db = dbById(dbId);
+    if (!db) throw apiError('找不到数据库', 404);
+
+    const matches = state.records.filter((rec) => {
+      if (rec.type !== type || (rec.dbId || DB1) !== dbId) return false;
+      const info = categoryOf(rec.cats || fallbackCats(rec), rec.type);
+      if (info.group !== oldName) return false;
+      return kind === 'cat' || info.sub === subName;
+    });
+    if (!matches.length) throw apiError('这个目录里没有文章', 404);
+
+    const collision = state.records.some((rec) => {
+      if (rec.type !== type || (rec.dbId || DB1) !== dbId) return false;
+      const info = categoryOf(rec.cats || fallbackCats(rec), rec.type);
+      return kind === 'cat' ? info.group === newName : (info.group === oldName && info.sub === newName);
+    });
+    if (collision) throw apiError('新的名字已经存在', 409);
+
+    const ids = [];
+    for (const rec of matches) {
+      await saveRevision({
+        docId: rec.docId, title: rec.title, body: recordBody(rec), cats: rec.cats,
+        tags: rec.tags, status: rec.status, words: rec.words,
+        bodyHash: rec.bodyHash, metaHash: rec.metaHash
+      }, '重命名目录前', 'before');
+      const src = rec.cats || fallbackCats(rec);
+      const base = rec.type === '小说' ? src.slice() : stripTypeLiteral(src);
+      const cats = normalizeCats(rec.type, base);
+      if (kind === 'cat') cats[1] = newName;
+      else cats[2] = newName;
+      const dir = defaultDir(rec.type, cats, db);
+      const path = dir + '/' + rec.docId + ' ' + safeName(rec.title) + '.md';
+      Object.assign(rec, {
+        cats,
+        dir,
+        path,
+        mtime: nowIso(),
+        updated: today(),
+        metaHash: await hash16(metaString(cats, rec.tags || [], rec.status))
+      });
+      decorate(rec);
+      await persistRecord(rec);
+      ids.push(rec.docId);
+    }
+    rebuildLib();
+    emitSync('wb64:library-changed', { at: nowIso(), source: 'rename-directory', count: ids.length });
+    return { ok: true, count: ids.length, ids };
+  }
+
   async function createArticle(payload) {
     const type = String(payload.type || '').trim();
     if (!TYPES.includes(type)) throw apiError('类型必须是小说、毕设、资料或素材', 400);
@@ -3021,6 +3082,10 @@
     }
     if (path === '/api/article') return notMine('这个文章操作还没有在 6.4 接通：' + method);
 
+    if (path === '/api/directory/rename' && method === 'POST') {
+      return json(await renameDirectory(await bodyOf(init)));
+    }
+
     if (path === '/api/search') {
       const q = String(sp.get('q') || '').trim();
       const db = sp.get('db') || 'all';
@@ -3131,8 +3196,10 @@
       const body = await bodyOf(init);
       const draft = state.drafts.find((d) => d.id === body.draftId);
       if (!draft) throw apiError('找不到这份草稿', 404);
+      if (draft.publishedId) throw apiError('这份草稿已经收入文库，继续写请打开文库里的文章', 409, 'ALREADY_PUBLISHED');
       const type = TYPES.includes(body.type) ? body.type : '资料';
       const record = await createArticle({
+        dbId: String(body.dbId || ''),
         type,
         title: String(body.title || draft.title || '无题').trim(),
         cats: body.cats,

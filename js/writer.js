@@ -42,7 +42,7 @@
     }
     applyPanels();
     renderAll();
-    if (opts.view) setView(opts.view);
+    if (opts.view && opts.view !== 'editor') setView(opts.view);
     P.patch({ lastMode: 'write' });
   }
 
@@ -87,7 +87,8 @@
   }
 
   function setView(view) {
-    if (!['outline', 'timeline', 'editor', 'assembly', 'settings'].includes(view)) view = 'outline';
+    if (view === 'editor') { openChapterForWriting(); return; }
+    if (!['outline', 'timeline', 'assembly', 'settings'].includes(view)) view = 'outline';
     state.view = view;
     const p = cur();
     if (p) { p.view = view; S.save(); }
@@ -95,6 +96,120 @@
     renderTop();
     renderView();
     if (view === 'settings') { state.rightOpen = false; applyPanels(); }
+  }
+
+  function openChapterForWriting(id) {
+    const p = cur();
+    if (!p) return;
+    let nodeId = id || state.selNode;
+    if (!nodeId) {
+      const chapters = S.sortedChapters(p);
+      if (!chapters.length) { newChapterDialog(); return; }
+      nodeId = chapters[0].id;
+    }
+    if (window.Immersive && window.Immersive.openNode) {
+      state.selNode = nodeId;
+      window.Immersive.openNode(nodeId, p.id, { returnTo: '#/w/' + encodeURIComponent(p.id) });
+      return;
+    }
+    if (window.Editor) window.Editor.openNode(nodeId);
+  }
+
+  function volumeLabel(p, n) {
+    const names = [n.title];
+    let cur = n, guard = 0;
+    while (guard < 8) {
+      guard += 1;
+      const pid = (cur.parents || [])[0];
+      const parent = pid ? p.nodes.find((x) => x.id === pid) : null;
+      if (!parent || parent.type !== 'vol') break;
+      names.unshift(parent.title);
+      cur = parent;
+    }
+    return names.join(' / ');
+  }
+
+  function pickerProjects(currentId) {
+    const specs = window.Gen6Projects && window.Gen6Projects.projectSpecs
+      ? window.Gen6Projects.projectSpecs() : [];
+    const valid = new Set(specs.map((s) => s.key));
+    return S.projects.filter((p) => !p.libKey || valid.has(p.libKey) || p.id === currentId);
+  }
+
+  function newChapterDialog(defaultProjectId) {
+    const projects = pickerProjects(defaultProjectId || state.pid);
+    if (!projects.length) { U.toast('先在写作台建一部作品', 'info'); return; }
+    const firstId = (defaultProjectId && projects.some((p) => p.id === defaultProjectId))
+      ? defaultProjectId
+      : (projects.some((p) => p.id === state.pid) ? state.pid : projects[0].id);
+    const m = U.openModal(
+      '<div class="modal-head"><div><h3>新章节</h3><p>选好作品和卷，直接在满屏里写。第一次保存会自动建好文库文章，并挂到这一章下面。</p></div></div>' +
+      '<div class="modal-body">' +
+      '<div class="field"><label>作品</label><select class="input" id="ncProject">' +
+      projects.map((p) => '<option value="' + U.esc(p.id) + '"' + (p.id === firstId ? ' selected' : '') + '>' + U.esc(p.name) + '</option>').join('') +
+      '</select></div>' +
+      '<div class="field"><label>卷</label><select class="input" id="ncVolume"></select></div>' +
+      '<div class="field"><label>章节名</label><input class="input" id="ncTitle" maxlength="120" autocomplete="off"></div>' +
+      '</div>' +
+      '<div class="modal-foot"><span class="hint" id="ncHint"></span><div class="foot-actions">' +
+      '<button class="btn ghost" data-cancel>取消</button>' +
+      '<button class="btn primary" data-ok>开始写</button>' +
+      '</div></div>',
+      'wide'
+    );
+    const projEl = m.box.querySelector('#ncProject');
+    const volEl = m.box.querySelector('#ncVolume');
+    const titleEl = m.box.querySelector('#ncTitle');
+    const hintEl = m.box.querySelector('#ncHint');
+    const fillVolumes = () => {
+      const p = S.get(projEl.value);
+      if (!p) return;
+      const vols = (p.nodes || []).filter((n) => n.type === 'vol')
+        .sort((a, b) => (a.order || 0) - (b.order || 0));
+      const subs = vols.filter((n) => /^nv-s-/.test(n.id));
+      const def = subs[0] || vols[0];
+      volEl.innerHTML = '<option value="">作品根节点（不归卷）</option>' +
+        vols.map((n) => '<option value="' + U.esc(n.id) + '"' + (def && n.id === def.id ? ' selected' : '') + '>' + U.esc(volumeLabel(p, n)) + '</option>').join('');
+      const next = S.sortedChapters(p).length + 1;
+      if (!titleEl.value.trim() || /^第\d+章$/.test(titleEl.value.trim())) titleEl.value = '第' + next + '章';
+      hintEl.textContent = '这一部已经有 ' + S.sortedChapters(p).length + ' 章';
+    };
+    projEl.onchange = fillVolumes;
+    fillVolumes();
+    setTimeout(() => titleEl.focus(), 50);
+    m.box.querySelector('[data-cancel]').onclick = m.close;
+    m.ov.onclick = (e) => { if (e.target === m.ov) m.close(); };
+    m.box.querySelector('[data-ok]').onclick = () => {
+      const p = S.get(projEl.value);
+      const title = titleEl.value.trim();
+      if (!p) return;
+      if (!title) { U.toast('章节名不能为空', 'alert'); titleEl.focus(); return; }
+      const volId = volEl.value;
+      const vol = volId ? p.nodes.find((n) => n.id === volId) : null;
+      const ch = window.blankNode('ch', title, 0, 0);
+      if (vol) {
+        ch.parents = [vol.id];
+        ch.x = (vol.x || 0) + 320;
+        const siblings = p.nodes.filter((x) => (x.parents || []).includes(vol.id));
+        ch.y = siblings.length ? Math.max.apply(null, siblings.map((s) => s.y || 0)) + 110 : (vol.y || 0);
+      } else {
+        let bottom = 0;
+        p.nodes.forEach((x) => { bottom = Math.max(bottom, x.y || 0); });
+        ch.x = 80;
+        ch.y = bottom + 126;
+      }
+      p.nodes.push(ch);
+      p.updatedAt = Date.now();
+      S.save();
+      m.close();
+      state.pid = p.id;
+      state.selNode = ch.id;
+      state.view = 'outline';
+      p.view = 'outline';
+      renderAll();
+      U.toast('章节已建好，正在打开满屏写作', 'feather');
+      openChapterForWriting(ch.id);
+    };
   }
 
   function renderView() {
@@ -486,7 +601,7 @@
       window.NODE_COLORS.map((c) => '<button data-icolor="' + c + '" class="' + (n.color === c ? 'on' : '') + '" style="--c:' + c + '" title="' + c + '"></button>').join('') +
       '</div></div></div>' +
       '<div class="insp-sec"><div class="insp-label">操作</div><div class="insp-actions" style="flex-direction:column">' +
-      '<button class="btn sm primary" data-insp="edit-node">' + U.icon('pen') + '进入写作</button>' +
+      '<button class="btn sm primary" data-insp="edit-node">' + U.icon('feather') + '满屏写作</button>' +
       '<button class="btn sm" data-insp="add-child">' + U.icon('plus') + '添加子节点</button>' +
       '<button class="btn sm" data-insp="connect-tip">' + U.icon('link') + '如何连线</button>' +
       '<button class="btn sm danger" data-insp="del-node">' + U.icon('trash') + '删除节点</button></div></div>';
@@ -518,18 +633,15 @@
         const act = b.getAttribute('data-insp');
         const n = p.nodes.find((x) => x.id === state.selNode);
         if (act === 'add-ch') {
-          const ch = window.blankNode('ch', '第' + (S.sortedChapters(p).length + 1) + '章', 420, 120 + p.nodes.length * 30);
-          p.nodes.push(ch); state.selNode = ch.id;
-          refreshAfterNodeChange(); U.toast('已新增一章');
+          newChapterDialog(p.id);
         } else if (act === 'editor') {
-          setView('editor');
+          openChapterForWriting();
         } else if (act === 'assembly') {
           setView('assembly');
         } else if (act === 'rename') {
           renameProject(p);
         } else if (act === 'edit-node' && n) {
-          if (n.type === 'vol') { U.toast('卷是容器，请给卷下的章写正文', 'info'); return; }
-          window.Editor.openNode(n.id);
+          openChapterForWriting(n.id);
         } else if (act === 'add-child' && n) {
           const child = window.blankNode(n.type === 'vol' ? 'ch' : 'scene', n.type === 'vol' ? '新章节' : '新场景', (n.x || 0) + 260, (n.y || 0) + 60);
           child.parents = [n.id];
@@ -636,7 +748,10 @@
 
   function popMenu(anchor, items, width) {
     const el = $('#dropMenu');
-    el.style.minWidth = (width || 210) + 'px';
+    el.style.minWidth = typeof width === 'number' ? width + 'px' : (width || '210px');
+    el.style.maxWidth = 'calc(100vw - 16px)';
+    el.style.maxHeight = Math.max(160, window.innerHeight - 16) + 'px';
+    el.style.overflowY = 'auto';
     el.innerHTML = items.map((it, i) => {
       if (it.head) return '<div class="mi-head">' + U.esc(it.head) + '</div>';
       if (it.sep) return '<div class="mi-sep"></div>';
@@ -644,8 +759,12 @@
     }).join('');
     el.hidden = false;
     const r = anchor.getBoundingClientRect();
-    el.style.left = Math.max(8, Math.min(r.left, window.innerWidth - el.offsetWidth - 8)) + 'px';
-    el.style.top = (r.bottom + 6) + 'px';
+    const menuW = el.offsetWidth;
+    const menuH = el.offsetHeight;
+    el.style.left = Math.max(8, Math.min(r.left, window.innerWidth - menuW - 8)) + 'px';
+    let top = r.bottom + 6;
+    if (top + menuH > window.innerHeight - 8) top = Math.max(8, r.top - menuH - 6);
+    el.style.top = top + 'px';
     el.querySelectorAll('.mi').forEach((b) => {
       b.onclick = () => { el.hidden = true; const it = items[+b.getAttribute('data-i')]; if (it && it.fn) it.fn(); };
     });
@@ -754,6 +873,7 @@
     state.rightOpen = P.get('panels') ? P.get('panels').right !== false : true;
     $('#btnBackLib').onclick = exit;
     $('#btnBookSwitch').onclick = (e) => bookMenu(e.currentTarget);
+    $('#btnNewChapter').onclick = () => newChapterDialog();
     $('#btnWMore').onclick = (e) => moreMenu(e.currentTarget);
     $('#btnPanels').onclick = togglePanels;
     $('#btnCollapseLeft').onclick = () => {
@@ -815,7 +935,7 @@
       const row = e.target.closest('[data-onode-main]');
       if (!row) return;
       const p = cur(); const n = p.nodes.find((x) => x.id === row.getAttribute('data-onode-main'));
-      if (n && n.type !== 'vol') { state.selNode = n.id; window.Editor.openNode(n.id); }
+      if (n && n.type !== 'vol') { state.selNode = n.id; openChapterForWriting(n.id); }
     });
 
     window.addEventListener('resize', U.debounce(() => { applyPanels(); }, 200));

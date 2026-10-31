@@ -57,7 +57,14 @@
     document.body.classList.remove('drafting');
     window.Writer.enter(pid, opts || {});
     if (opts && opts.nodeId) {
-      setTimeout(() => { if (window.Editor) window.Editor.openNode(opts.nodeId); }, 40);
+      setTimeout(() => {
+        if (window.Writer) window.Writer.selectNode(opts.nodeId);
+        if (opts.view === 'editor' && window.Immersive) {
+          window.Immersive.openNode(opts.nodeId, pid, { returnTo: '#/w/' + encodeURIComponent(pid) });
+        } else if (window.Outline && opts.view === 'outline') {
+          window.Outline.centerOn(opts.nodeId);
+        }
+      }, 60);
     }
   }
 
@@ -85,7 +92,8 @@
   function route() {
     const r = window.Lib.route();
     if (window.Dashboard && r !== '/dashboard') window.Dashboard.stop();
-    if (/^\/write(?:\/|\?|$)/.test(r)) {
+    const immersiveRoute = /^\/write(?:\/|\?|$)/.test(r) || (/^\/draft\/[^/]+$/.test(r) && r !== '/draft/new');
+    if (immersiveRoute) {
       if (document.body.classList.contains('mode-write')) {
         document.body.classList.remove('mode-write');
         $('#writerApp').hidden = true;
@@ -203,7 +211,7 @@
 
     document.addEventListener('click', (e) => {
       const menu = $('#dropMenu'), ctx = $('#ctxMenu');
-      if (!menu.hidden && !menu.contains(e.target) && !e.target.closest('#btnLibMore,#btnBookSwitch,#btnWMore,[data-node-menu]')) menu.hidden = true;
+      if (!menu.hidden && !menu.contains(e.target) && !e.target.closest('#btnLibMore,#btnBookSwitch,#btnWMore,#immMore,[data-node-menu]')) menu.hidden = true;
       if (!ctx.hidden && !ctx.contains(e.target) && !e.target.closest('[data-node-menu],.canvas-toolbar')) ctx.hidden = true;
     });
   }

@@ -84,6 +84,7 @@
     move: (id, payload) => request('/api/article/move', { method: 'POST', body: Object.assign({ id }, payload || {}) }),
     copy: (id, payload) => request('/api/article/copy', { method: 'POST', body: Object.assign({ id }, payload || {}) }),
     deleteDirectory: (payload) => request('/api/directory/delete', { method: 'POST', body: payload || {} }),
+    renameDirectory: (payload) => request('/api/directory/rename', { method: 'POST', body: payload || {} }),
 
     obsidianScan: (payload) => request('/api/obsidian/scan', { method: 'POST', body: payload || {} }),
     obsidianImport: (payload) => request('/api/obsidian/import', { method: 'POST', body: payload || {} }),

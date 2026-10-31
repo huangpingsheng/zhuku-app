@@ -176,9 +176,18 @@
 
 .node{
   position:absolute;width:212px;background:var(--surface);border:1px solid var(--line);
-  border-radius:12px;padding:12px 13px 11px;cursor:grab;user-select:none;
+  border-radius:12px;padding:12px 13px 11px;cursor:grab;user-select:none;touch-action:none;
   box-shadow:var(--sh-sm);transition:box-shadow .18s,border-color .18s,transform .1s;will-change:left,top;
 }
+.node-grip{
+  position:absolute;left:50%;top:-9px;transform:translateX(-50%);width:28px;height:10px;border-radius:6px;
+  background:var(--surface);border:1px solid var(--line);display:grid;place-items:center;color:var(--ink-3);
+  opacity:0;transition:opacity .15s,background .15s;cursor:grab;z-index:4;touch-action:none;
+}
+.node:hover .node-grip,.node.selected .node-grip{opacity:.85}
+.node-grip svg{width:9px;height:9px;pointer-events:none}
+.node-grip:hover{background:var(--accent);border-color:var(--accent);color:#fff;opacity:1}
+@media (hover:none){.node-grip{opacity:.7}}
 .node:hover{border-color:var(--line-2);box-shadow:var(--sh-md)}
 .node.selected{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft),var(--sh-md)}
 .node.pinned{box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 22%,transparent),var(--sh-sm)}
@@ -657,4 +666,12 @@ details[open] > summary .lt-caret svg{transform:rotate(90deg)}
   .lt-name{font-size:13px}
   .lt-fname{font-size:12.5px}
   .lt-more{width:26px;height:26px}
+}
+
+/* ---------- 新章节入口 ---------- */
+#btnNewChapter{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 30%,var(--line))}
+#btnNewChapter:hover{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+@media (max-width:900px){
+  .wtop-right .tb-btn#btnNewChapter{display:inline-flex;width:36px;padding:0;justify-content:center}
+  #btnNewChapter span{display:none}
 }

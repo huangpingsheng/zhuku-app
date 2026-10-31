@@ -25,7 +25,13 @@
     typewriter: false,
     pendingNew: false,
     lastSavedAt: 0,
-    busy: false
+    busy: false,
+    mode: 'article',
+    draftId: null,
+    draft: null,
+    nodeId: null,
+    projectId: null,
+    readOnly: false
   };
 
   function safeDecode(value) {
@@ -42,6 +48,13 @@
   }
 
   function writePath(id) { return '#/write' + (id ? '/' + encodeURIComponent(id) : ''); }
+  function draftPath(id) { return '#/draft/' + encodeURIComponent(id); }
+  function nodePath(nodeId, projectId) {
+    const query = new URLSearchParams();
+    query.set('node', nodeId);
+    if (projectId) query.set('project', projectId);
+    return '#/write?' + query.toString();
+  }
 
   function nowLabel() {
     const d = new Date();
@@ -116,6 +129,7 @@
 
   function metaFromQuery(query) {
     const meta = defaultMeta();
+    const fresh = query.get('fresh') === '1';
     const dbq = query.get('dbId');
     if (dbq && D.db(dbq) && dbq !== meta.dbId) {
       meta.dbId = dbq;
@@ -130,14 +144,15 @@
       if (group !== meta.group) meta.sub = '';
       meta.group = group;
     }
-    if (!catsOfType(meta.type, meta.dbId).some((c) => c.name === meta.group)) {
+    if (!fresh && !catsOfType(meta.type, meta.dbId).some((c) => c.name === meta.group)) {
       const first = firstMeta(meta.type, meta.dbId);
       meta.group = first ? first.group : '未分类';
       meta.sub = '';
     }
     const sub = query.get('sub') || query.get('volume');
     if (sub) meta.sub = sub;
-    if (!meta.sub) meta.sub = meta.type === '小说' ? '未分卷' : ((subNames(meta.type, meta.group, meta.dbId)[0]) || '');
+    if (query.get('nosub') === '1') meta.sub = '';
+    else if (!meta.sub) meta.sub = meta.type === '小说' ? '未分卷' : ((subNames(meta.type, meta.group, meta.dbId)[0]) || '');
     if (query.get('tags')) meta.tags = query.get('tags');
     return meta;
   }
@@ -249,6 +264,22 @@
   function renderMetaLine() {
     const el = $('#immMeta');
     if (!el || !I.meta) return;
+    if (I.mode === 'draft') {
+      const published = !!(I.draft && I.draft.publishedId);
+      el.innerHTML = '<span class="imm-pill">草稿箱</span>' +
+        '<span>' + (published ? '已收入文库 · 只读快照' : '本机草稿 · 自动保存') + '</span>' +
+        '<span class="imm-status">' + (published ? '已收入' : '草稿') + '</span>' +
+        (published ? '<span class="imm-filepath">' + U.esc(I.draft.publishedId) + '</span>' : '');
+      return;
+    }
+    if (I.mode === 'node' && !I.docId) {
+      const p = S.get(I.projectId);
+      el.innerHTML = '<span class="imm-pill">写作台</span>' +
+        '<span class="imm-pill">' + U.esc(I.meta.type) + '</span>' +
+        '<span>' + U.esc(p ? p.name : '作品') + (I.meta.sub ? ' / ' + U.esc(I.meta.sub) : '') + '</span>' +
+        '<span class="imm-status">首次保存进入文库</span>';
+      return;
+    }
     const status = I.meta.status || '草稿';
     const path = I.article ? I.article.path : '';
     const db = D.db(I.meta.dbId);
@@ -264,6 +295,15 @@
   function renderCrumb() {
     const el = $('#immCrumb');
     if (!el) return;
+    if (I.mode === 'draft') {
+      el.textContent = '草稿箱 / ' + ((I.draft && I.draft.title) || '草稿');
+      return;
+    }
+    if (I.mode === 'node' && !I.docId) {
+      const p = S.get(I.projectId);
+      el.textContent = '写作台 / ' + (p ? p.name : '作品') + ' / ' + (I.meta ? I.meta.group : '');
+      return;
+    }
     if (I.docId || I.article) {
       el.textContent = I.article ? I.article.path : '';
     } else {
@@ -275,7 +315,11 @@
   function renderLoc() {
     const el = $('#immLoc');
     if (!el) return;
-    if (I.docId) {
+    if (I.mode === 'draft') {
+      el.textContent = (I.draft && I.draft.title) || '草稿';
+    } else if (I.mode === 'node' && !I.docId) {
+      el.textContent = $('#immTitle').value.trim() || '写作台章节';
+    } else if (I.docId) {
       el.textContent = (I.article && I.article.title) || $('#immTitle').value.trim() || '无题';
     } else {
       el.textContent = '新文章';
@@ -339,6 +383,12 @@
     const opts = options || {};
     const wasOpen = I.open;
     I.open = true;
+    I.mode = 'article';
+    I.draftId = null;
+    I.draft = null;
+    I.nodeId = null;
+    I.projectId = null;
+    I.readOnly = false;
     I.docId = docId || null;
     I.bodyHash = '';
     I.article = null;
@@ -353,6 +403,10 @@
     document.body.classList.add('mode-imm');
     $('#immDrawer').hidden = true;
     document.body.classList.remove('imm-drawer-open');
+    $('#immDraftbar').hidden = true;
+    $('#immNodebar').hidden = true;
+    $('#immTitle').readOnly = false;
+    $('#immBody').contentEditable = 'true';
     document.body.classList.toggle('imm-focus', !!I.focus);
     document.body.classList.toggle('imm-type', !!I.typewriter);
     $('#immFocusState') && $('#immFocusState').remove();
@@ -427,6 +481,275 @@
     if (!opts.keepDrawer) renderDrawer('');
   }
 
+  /* ---------------- draft mode ---------------- */
+  async function fetchDrafts() {
+    const res = await window.Gen6Api.drafts();
+    return Array.isArray(res) ? res : ((res && res.drafts) || []);
+  }
+
+  function updateDraftBar() {
+    const bar = $('#immDraftbar');
+    if (!bar) return;
+    const published = !!(I.draft && I.draft.publishedId);
+    bar.hidden = false;
+    const state = $('#immDraftState');
+    const hint = $('#immDraftHint');
+    const publish = $('#immDraftPublish');
+    const cont = $('#immDraftContinue');
+    if (state) {
+      state.textContent = published ? '已收入文库 · 只读快照' : '自动保存 · 仅本机';
+      state.title = published ? '要继续改，请打开文库里的文章；这份草稿保留原样' : '自动保存 · 收入文库前只在本机草稿箱';
+    }
+    if (hint) hint.textContent = published ? '要继续改，请打开文库里的文章；这份草稿保留原样' : '收入文库前只在本机草稿箱；收入后这份草稿会变成只读快照';
+    if (publish) publish.hidden = published;
+    if (cont) cont.hidden = !published;
+  }
+
+  function applyBarState(key, collapsed) {
+    const bar = $('.imm-bar[data-bar="' + key + '"]');
+    if (!bar) return;
+    bar.classList.toggle('collapsed', collapsed);
+    const btn = bar.querySelector('[data-bar-toggle]');
+    if (!btn) return;
+    btn.setAttribute('aria-expanded', String(!collapsed));
+    btn.title = collapsed ? '展开说明' : '收起说明';
+  }
+
+  function bindBars() {
+    $$('.imm-bar[data-bar]').forEach((bar) => {
+      const key = bar.getAttribute('data-bar');
+      const stored = window.lsGet('6.immbar.' + key, null);
+      const collapsed = stored == null ? true : stored === 'collapsed';
+      applyBarState(key, collapsed);
+      const btn = bar.querySelector('[data-bar-toggle]');
+      if (!btn) return;
+      btn.onclick = () => {
+        const next = !bar.classList.contains('collapsed');
+        applyBarState(key, next);
+        window.lsSet('6.immbar.' + key, next ? 'collapsed' : 'expanded');
+      };
+    });
+  }
+
+  async function mountDraft(draftId, options) {
+    const opts = options || {};
+    const wasOpen = I.open;
+    I.open = true;
+    I.mode = 'draft';
+    I.draftId = draftId;
+    I.draft = null;
+    I.docId = null;
+    I.bodyHash = '';
+    I.article = null;
+    I.nodeId = null;
+    I.projectId = null;
+    I.readOnly = false;
+    I.dirty = false;
+    I.pending = false;
+    I.busy = false;
+    clearTimeout(I.saveTimer);
+    clearTimeout(I.retryTimer);
+    window.__gen6Editing = '';
+
+    $('#immApp').hidden = false;
+    document.body.classList.add('mode-imm');
+    $('#immDrawer').hidden = true;
+    document.body.classList.remove('imm-drawer-open');
+    document.body.classList.toggle('imm-focus', !!I.focus);
+    document.body.classList.toggle('imm-type', !!I.typewriter);
+    $('#immFocusState') && $('#immFocusState').remove();
+    $('#immNewbar').hidden = true;
+    $('#immNodebar').hidden = true;
+    $('#immDraftbar').hidden = false;
+
+    setState('正在读取草稿…');
+    $('#immTitle').value = '';
+    $('#immBody').innerHTML = '';
+    $('#immPath').textContent = '草稿箱';
+    $('#immTitle').readOnly = false;
+    $('#immBody').contentEditable = 'true';
+
+    let draft = null;
+    try {
+      const list = await fetchDrafts();
+      draft = list.find((d) => d.id === draftId) || null;
+    } catch (error) {
+      U.toast(error.message || '草稿读不出来', 'alert');
+      setState('读取失败', 'warn');
+      return;
+    }
+    if (!draft) {
+      U.toast('这份草稿可能已经被删除', 'alert');
+      if (location.hash === draftPath(draftId)) location.hash = '#/drafts';
+      return;
+    }
+    I.draft = draft;
+    I.readOnly = !!draft.publishedId;
+    I.meta = { dbId: currentDbId(), type: '资料', group: '草稿箱', sub: '', tags: '', status: '草稿' };
+    $('#immTitle').value = draft.title || '';
+    $('#immBody').innerHTML = draft.html || U.textToHtml(draft.markdown || draft.text || '');
+    $('#immTitle').readOnly = I.readOnly;
+    $('#immBody').contentEditable = I.readOnly ? 'false' : 'true';
+    autosizeTitle();
+    updateCount();
+    renderMetaLine();
+    renderCrumb();
+    renderLoc();
+    updateDraftBar();
+    $('#immPath').textContent = I.readOnly ? '已收入文库 · 这份草稿只读' : '草稿 · 自动保存在本机草稿箱';
+    setState(I.readOnly ? '只读快照' : '已载入草稿', 'ok');
+    if (!wasOpen) $('#immStage').scrollTop = 0;
+    if (!I.readOnly) {
+      requestAnimationFrame(() => {
+        $('#immBody').focus();
+        const range = document.createRange();
+        range.selectNodeContents($('#immBody'));
+        range.collapse(true);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+        $('#immBody').scrollTop = 0;
+        $('#immStage').scrollTop = 0;
+      });
+    }
+  }
+
+  /* ---------------- 写作台章节模式 ---------------- */
+  function nearestAncestors(p, n) {
+    const out = [];
+    const seen = new Set([n.id]);
+    let cur = n;
+    for (let i = 0; i < 8; i += 1) {
+      const pid = (cur.parents || [])[0];
+      if (!pid || seen.has(pid)) break;
+      const parent = (p.nodes || []).find((x) => x.id === pid);
+      if (!parent) break;
+      out.push(parent);
+      seen.add(pid);
+      cur = parent;
+    }
+    return out;
+  }
+
+  function nodeMeta(p, n) {
+    const type = p.libType || (p.libKey && p.libKey.indexOf('novel:') === 0 ? '小说'
+      : (p.kind === 'note' || p.name === '随笔' ? '资料' : '小说'));
+    const dbId = p.dbId && D.db(p.dbId) ? p.dbId : currentDbId();
+    const ancestors = nearestAncestors(p, n);
+    const vol = ancestors.find((x) => x.type === 'vol');
+    let group = '';
+    let sub = '';
+    if (type === '小说') {
+      group = p.name || '未分类';
+      sub = (vol && vol.title) || '未分卷';
+    } else {
+      const catVol = ancestors.find((x) => /^nv-c-/.test(x.id));
+      const subVol = ancestors.find((x) => /^nv-s-/.test(x.id));
+      group = (catVol && catVol.title) || (p.libKey ? '未分类' : (p.name || '未分类'));
+      sub = (subVol && subVol.title) || (p.libKey ? '未分类' : '');
+    }
+    return { dbId, type, group, sub, tags: [group, sub].filter(Boolean).join('，'), status: '草稿' };
+  }
+
+  function linkNodeArticle(article) {
+    const p = I.projectId ? S.get(I.projectId) : null;
+    const n = p && (p.nodes || []).find((x) => x.id === I.nodeId);
+    if (!n) return;
+    n.docId = article.id;
+    n.docHash = article.bodyHash || '';
+    n.title = article.title;
+    n.body = article.html || $('#immBody').innerHTML;
+    n.words = article.words;
+    n.updatedAt = Date.now();
+    p.updatedAt = Date.now();
+    S.save();
+  }
+
+  async function mountNode(nodeId, projectId, options) {
+    const opts = options || {};
+    let p = projectId ? S.get(projectId) : null;
+    if (!p) p = S.projects.find((x) => (x.nodes || []).some((n) => n.id === nodeId)) || null;
+    let n = p && (p.nodes || []).find((x) => x.id === nodeId);
+    if (!p || !n) {
+      U.toast('找不到这个写作台章节', 'alert');
+      return;
+    }
+    if (n.type === 'vol') {
+      const child = (p.nodes || []).find((x) => x.type === 'ch' && (x.parents || []).includes(n.id));
+      if (!child) { U.toast('这一卷下面还没有章节', 'info'); return; }
+      n = child;
+      nodeId = n.id;
+    }
+    if (n.docId) {
+      if (opts.returnTo != null) I.returnHash = opts.returnTo;
+      await mount(n.docId);
+      I.nodeId = nodeId;
+      I.projectId = p.id;
+      history.replaceState(history.state, '', writePath(n.docId));
+      return;
+    }
+
+    const wasOpen = I.open;
+    I.open = true;
+    I.mode = 'node';
+    I.nodeId = nodeId;
+    I.projectId = p.id;
+    I.draftId = null;
+    I.draft = null;
+    I.docId = null;
+    I.bodyHash = '';
+    I.article = null;
+    I.readOnly = false;
+    I.dirty = false;
+    I.pending = false;
+    I.busy = false;
+    clearTimeout(I.saveTimer);
+    clearTimeout(I.retryTimer);
+    window.__gen6Editing = 'node:' + nodeId;
+    I.meta = nodeMeta(p, n);
+
+    $('#immApp').hidden = false;
+    document.body.classList.add('mode-imm');
+    $('#immDrawer').hidden = true;
+    document.body.classList.remove('imm-drawer-open');
+    document.body.classList.toggle('imm-focus', !!I.focus);
+    document.body.classList.toggle('imm-type', !!I.typewriter);
+    $('#immFocusState') && $('#immFocusState').remove();
+    $('#immNewbar').hidden = true;
+    $('#immDraftbar').hidden = true;
+    $('#immNodebar').hidden = false;
+    $('#immTitle').readOnly = false;
+    $('#immBody').contentEditable = 'true';
+    $('#immTitle').value = n.title || '新章节';
+    $('#immBody').innerHTML = n.body || '';
+    const nodeState = $('#immNodeState');
+    if (nodeState) {
+      nodeState.textContent = '第一次保存时自动进文库';
+      nodeState.title = '将存入：' + I.meta.type + ' / ' + I.meta.group + (I.meta.sub ? ' / ' + I.meta.sub : '');
+    }
+    const nodeHint = $('#immNodeHint');
+    if (nodeHint) nodeHint.textContent = '将存入：' + I.meta.type + ' / ' + I.meta.group + (I.meta.sub ? ' / ' + I.meta.sub : '') + '；写下的正文会同时出现在这一章和文库文章里';
+    autosizeTitle();
+    updateCount();
+    renderMetaLine();
+    renderCrumb();
+    renderLoc();
+    $('#immPath').textContent = '写作台章节 · 还没进文库';
+    setState('未保存');
+    if (!wasOpen) $('#immStage').scrollTop = 0;
+    requestAnimationFrame(() => {
+      $('#immBody').focus();
+      const range = document.createRange();
+      range.selectNodeContents($('#immBody'));
+      range.collapse(true);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      $('#immBody').scrollTop = 0;
+      $('#immStage').scrollTop = 0;
+    });
+  }
+
   /* ---------------- saving ---------------- */
   function defaultTitle() {
     const d = new Date();
@@ -449,6 +772,8 @@
   async function saveNow(options) {
     const opts = options || {};
     if (!I.open) return false;
+    if (I.mode === 'draft') return saveDraftNow(opts);
+    if (I.readOnly) return false;
     if (I.saving) { I.pending = true; return false; }
     const titleEl = $('#immTitle'), bodyEl = $('#immBody');
     const html = bodyEl.innerHTML || '';
@@ -464,7 +789,8 @@
     setState('正在保存…');
     try {
       if (!I.docId) {
-        const meta = readNewbar();
+        const fromNode = I.mode === 'node';
+        const meta = fromNode ? I.meta : readNewbar();
         const tags = parseTags(meta.tags);
         if (!tags.length) {
           tags.push(meta.group || meta.type);
@@ -480,25 +806,34 @@
           body: window.Gen6Bridge.markdownOf(title, html)
         });
         const article = result.article;
+        if (fromNode) linkNodeArticle(article);
         I.docId = article.id;
         I.article = article;
         I.bodyHash = article.bodyHash;
         I.meta = metaFromArticle(article);
         I.meta.status = article.status;
         I.dirty = false;
+        I.mode = 'article';
+        I.nodeId = null;
+        I.projectId = null;
+        I.readOnly = false;
         window.__gen6Editing = article.id;
         history.replaceState(history.state, '', writePath(article.id));
         $('#immNewbar').hidden = true;
+        $('#immNodebar').hidden = true;
+        $('#immDraftbar').hidden = true;
         titleEl.value = article.title;
+        titleEl.readOnly = false;
+        bodyEl.contentEditable = 'true';
         autosizeTitle();
         $('#immPath').textContent = article.path;
         renderMetaLine();
         renderCrumb();
         renderLoc();
-        saveLastMeta();
+        if (!fromNode) saveLastMeta();
         updateNodeCache(article);
         setState('已保存 ' + nowLabel(), 'ok');
-        U.toast('已新建：' + article.path, 'check');
+        U.toast((fromNode ? '章节已进入文库：' : '已新建：') + article.path, 'check');
         window.Gen6Bridge.refreshLibrary({ silent: true, delay: 120 });
         return true;
       }
@@ -575,6 +910,162 @@
     }
   }
 
+  function pushDraftHistory(draft) {
+    if (!draft || !draft.id) return;
+    const key = 'draftHistory.' + draft.id;
+    const list = window.lsGet(key, []);
+    const arr = Array.isArray(list) ? list : [];
+    const markdown = String(draft.markdown || '');
+    const last = arr[0];
+    if (last && last.markdown === markdown && last.title === draft.title) return;
+    arr.unshift({ time: new Date().toISOString(), title: draft.title || '无题速写', markdown });
+    window.lsSet(key, arr.slice(0, 40));
+  }
+
+  async function saveDraftNow(options) {
+    const opts = options || {};
+    if (!I.draftId || !I.draft) return false;
+    if (I.readOnly) return false;
+    if (I.saving) { I.pending = true; return false; }
+    clearTimeout(I.saveTimer);
+    I.saveTimer = null;
+    const titleEl = $('#immTitle');
+    const title = String(titleEl.value || '').replace(/\r?\n/g, ' ').trim() || '无题速写';
+    const markdown = U.htmlToMarkdown($('#immBody').innerHTML || '').replace(/\r\n/g, '\n').replace(/^\n+|\n+$/g, '');
+    if (!I.dirty && !opts.force) return true;
+    if (title === String(I.draft.title || '').trim() && markdown === String(I.draft.markdown || '')) {
+      I.dirty = false;
+      setState('已保存', 'ok');
+      return true;
+    }
+    I.saving = true;
+    setState('正在保存草稿…');
+    try {
+      const res = await window.Gen6Api.updateDraft(I.draftId, { title, markdown });
+      const draft = (res && res.draft) || res;
+      I.draft = draft;
+      I.dirty = false;
+      if (draft && draft.title && titleEl.value.trim() !== draft.title) titleEl.value = draft.title;
+      pushDraftHistory(draft);
+      setState('已保存 ' + nowLabel(), 'ok');
+      updateDraftBar();
+      renderLoc();
+      return true;
+    } catch (error) {
+      I.dirty = true;
+      setState('草稿保存失败，稍后重试', 'warn');
+      U.toast(error.message || '草稿保存失败', 'alert');
+      return false;
+    } finally {
+      I.saving = false;
+      if (I.pending) {
+        I.pending = false;
+        if (I.dirty) setTimeout(() => saveNow({ force: false }), 120);
+      }
+    }
+  }
+
+  async function publishCurrentDraft() {
+    if (!I.draftId || !I.draft) return;
+    if (I.readOnly) {
+      U.toast('这份草稿已经是只读快照，继续写请打开文章', 'info');
+      return;
+    }
+    const saved = await saveDraftNow({ force: true });
+    if (!saved) {
+      U.toast('草稿还没保存成功，先别收入文库', 'alert');
+      return;
+    }
+    const opener = window.Hub && window.Hub.openPublishDraft;
+    if (!opener) {
+      U.toast('收入文库面板没有载入', 'alert');
+      return;
+    }
+    opener(I.draft, (article) => {
+      I.readOnly = true;
+      I.draft.publishedId = article.id;
+      I.draft.updatedAt = new Date().toISOString();
+      $('#immTitle').readOnly = true;
+      $('#immBody').contentEditable = 'false';
+      $('#immPath').textContent = '已收入文库 · 这份草稿只读';
+      setState('已收入文库', 'ok');
+      updateDraftBar();
+      renderMetaLine();
+      renderCrumb();
+      renderLoc();
+      window.Gen6Bridge.refreshLibrary({ silent: true, delay: 120 });
+      if (window.Gen6Projects) window.Gen6Projects.syncAll({ quiet: true }).catch(() => {});
+    });
+  }
+
+  function openDraftVersions() {
+    if (!I.draft) return;
+    const list = window.lsGet('draftHistory.' + I.draftId, []);
+    const arr = Array.isArray(list) ? list : [];
+    const rows = arr.length ? arr.map((item, i) => {
+      const time = item.time ? new Date(item.time).toLocaleString('zh-CN', { hour12: false }) : '—';
+      const words = U.countWords(item.markdown || '');
+      return '<div class="hist-row">' +
+        '<div class="hist-time">' + U.esc(time) + '</div>' +
+        '<div class="hist-main"><b>' + U.esc(item.title || '无题') + '</b><p>' + U.esc(String(item.markdown || '').replace(/\s+/g, ' ').slice(0, 90) || '空白') + '</p></div>' +
+        '<div class="hist-meta">' + U.fmt(words) + ' 字</div>' +
+        '<button class="btn sm" data-dv="' + i + '">恢复</button></div>';
+    }).join('') : '<div class="hub-empty">' + U.icon('history') + '<p>这份草稿还没有本机版本。每次保存都会留下一条记录。</p></div>';
+    const m = U.openModal(
+      '<div class="modal-head"><div><h3>本机版本 · ' + U.esc(I.draft.title || '草稿') + '</h3>' +
+      '<p>按时间倒序排列，最多保留 40 个版本。恢复只改这份草稿，不会动文库。</p></div></div>' +
+      '<div class="modal-body"><div class="hist-list">' + rows + '</div></div>' +
+      '<div class="modal-foot"><span class="hint">草稿历史保存在这台设备</span><div class="foot-actions">' +
+      '<button class="btn ghost" data-dv-clear>清空历史</button><button class="btn" data-dv-close>关闭</button></div></div>',
+      'wide'
+    );
+    m.box.querySelector('[data-dv-close]').onclick = m.close;
+    m.ov.onclick = (e) => { if (e.target === m.ov) m.close(); };
+    m.box.querySelectorAll('[data-dv]').forEach((b) => {
+      b.onclick = () => {
+        const item = arr[+b.getAttribute('data-dv')];
+        if (!item) return;
+        m.close();
+        $('#immTitle').value = item.title || '';
+        $('#immBody').innerHTML = U.textToHtml(item.markdown || '');
+        autosizeTitle();
+        updateCount();
+        I.dirty = true;
+        setState('未保存 · 已恢复本机版本', 'warn');
+        scheduleSave(600);
+        U.toast('已恢复本机版本，正在保存', 'history');
+      };
+    });
+    m.box.querySelector('[data-dv-clear]').onclick = () => {
+      try { localStorage.removeItem('ws.draftHistory.' + I.draftId); } catch (e) { /* 忽略 */ }
+      m.close();
+      U.toast('本机草稿历史已清空', 'trash');
+    };
+  }
+
+  async function deleteCurrentDraft() {
+    if (!I.draft || !I.draftId) return;
+    const ok = await U.confirmModal({
+      title: '删除草稿「' + (I.draft.title || '无题') + '」？',
+      desc: '只删除这份草稿，不影响已经收入文库的文章。',
+      okText: '删除',
+      danger: true
+    });
+    if (!ok) return;
+    try {
+      await window.Gen6Api.deleteDraft(I.draftId);
+      try { localStorage.removeItem('ws.draftHistory.' + I.draftId); } catch (e) { /* 忽略 */ }
+      I.dirty = false;
+      closeUI();
+      if (window.Hub && window.Hub.refreshDrafts && location.hash === '#/drafts') window.Hub.refreshDrafts();
+      if (location.hash !== '#/drafts') location.hash = '#/drafts';
+      else window.App.route();
+      U.toast('草稿已删除', 'trash');
+    } catch (error) {
+      U.toast(error.message || '删除失败', 'alert');
+    }
+  }
+
   function scheduleSave(delay) {
     I.dirty = true;
     setState('未保存', 'warn');
@@ -592,83 +1083,47 @@
   /* ---------------- metadata modal ---------------- */
   function openMetaModal() {
     if (!I.meta) return;
+    if (!window.MetaPicker) { U.toast('「存到哪里」选择器没有载入', 'alert'); return; }
     const meta = I.meta;
-    const db = D.db(meta.dbId);
-    const m = U.openModal(
-      '<div class="modal-head"><div><h3>文章设定</h3><p>改分类会让 md 文件移动到对应目录，目录和文库同时更新。</p></div></div>' +
-      '<div class="modal-body">' +
-      '<div class="field"><label>标题</label><input class="input" id="mmTitle" value="' + U.esc($('#immTitle').value) + '"></div>' +
-      '<div class="field"><label>所属数据库</label><div class="input-static db-static">' +
-      '<span class="dot" style="background:' + (db ? db.color : '#8A9099') + '"></span>' + U.esc(db ? db.name : '未指定') +
-      '<span class="hint">要换库请用「更多 · 移动 / 复制」</span></div></div>' +
-      '<div class="field"><label>类型</label><select class="input" id="mmType">' +
-      TYPES.map((t) => '<option' + (t === meta.type ? ' selected' : '') + '>' + t + '</option>').join('') + '</select></div>' +
-      '<div class="field-2col">' +
-      '<div class="field"><label id="mmGroupLabel">分类 / 作品</label><input class="input" id="mmGroup" list="mmGroupList" value="' + U.esc(meta.group) + '"><datalist id="mmGroupList"></datalist></div>' +
-      '<div class="field"><label id="mmSubLabel">子类 / 卷</label><input class="input" id="mmSub" list="mmSubList" value="' + U.esc(meta.sub) + '"><datalist id="mmSubList"></datalist></div>' +
-      '</div>' +
-      '<div class="field"><label>标签（逗号或顿号分隔）</label><input class="input" id="mmTags" value="' + U.esc(meta.tags || '') + '"></div>' +
-      '<div class="field"><label>状态</label><select class="input" id="mmStatus">' +
-      STATUSES.map((s) => '<option' + (s === (meta.status || '草稿') ? ' selected' : '') + '>' + s + '</option>').join('') + '</select></div>' +
-      '</div>' +
-      '<div class="modal-foot"><div class="foot-actions">' +
-      '<button class="btn ghost" data-cancel>取消</button>' +
-      '<button class="btn primary" data-ok>保存设定</button>' +
-      '</div></div>'
-    );
-    const typeEl = m.box.querySelector('#mmType');
-    const groupEl = m.box.querySelector('#mmGroup');
-    const subEl = m.box.querySelector('#mmSub');
-    const fill = () => {
-      const type = typeEl.value;
-      fillListIn(m.box.querySelector('#mmGroupList'), groupNames(type));
-      fillListIn(m.box.querySelector('#mmSubList'), subNames(type, groupEl.value.trim()));
-      const novel = type === '小说';
-      m.box.querySelector('#mmGroupLabel').textContent = novel ? '作品' : '分类';
-      m.box.querySelector('#mmSubLabel').textContent = novel ? '卷' : '子类';
-    };
-    function fillListIn(el, values) { el.innerHTML = values.map((v) => '<option value="' + U.esc(v) + '"></option>').join(''); }
-    typeEl.onchange = () => {
-      const groups = groupNames(typeEl.value);
-      if (!groups.includes(groupEl.value.trim())) groupEl.value = groups[0] || '未分类';
-      const subs = subNames(typeEl.value, groupEl.value.trim());
-      subEl.value = subs[0] || (typeEl.value === '小说' ? '未分卷' : '');
-      fill();
-    };
-    groupEl.addEventListener('input', fill);
-    fill();
-    m.box.querySelector('[data-cancel]').onclick = m.close;
-    m.box.querySelector('[data-ok]').onclick = async () => {
-      const next = {
-        type: typeEl.value,
-        group: groupEl.value.trim() || '未分类',
-        sub: subEl.value.trim() || (typeEl.value === '小说' ? '未分卷' : ''),
-        tags: m.box.querySelector('#mmTags').value.trim(),
-        status: m.box.querySelector('#mmStatus').value
-      };
-      const title = m.box.querySelector('#mmTitle').value.trim();
-      if (!title) { U.toast('标题不能为空', 'alert'); return; }
-      m.close();
-      $('#immTitle').value = title;
-      autosizeTitle();
-      I.meta = Object.assign({}, meta, next);
-      if (!I.docId) {
-        syncMetaInputs();
-        saveLastMeta();
+    window.MetaPicker.open({
+      heading: '文章设定',
+      desc: '改分类会让 md 文件移动到对应目录，目录和文库同时更新。',
+      showTitle: true,
+      title: $('#immTitle').value,
+      dbId: meta.dbId || currentDbId(),
+      allowDbChange: false,
+      type: meta.type,
+      group: meta.group,
+      sub: meta.sub,
+      tags: parseTags(meta.tags),
+      status: meta.status || '草稿',
+      statuses: STATUSES,
+      okText: '保存设定',
+      onConfirm: async (v) => {
+        $('#immTitle').value = v.title;
+        autosizeTitle();
+        I.meta = Object.assign({}, meta, {
+          type: v.type,
+          group: v.group,
+          sub: v.sub || (v.type === '小说' ? '未分卷' : ''),
+          tags: v.tags.join('、'),
+          status: v.status
+        });
+        if (!I.docId) {
+          syncMetaInputs();
+          saveLastMeta();
+          renderMetaLine();
+          renderCrumb();
+          U.toast('设定已更新，第一次保存时会按这个位置建档', 'check');
+          return true;
+        }
+        I.dirty = true;
+        const saved = await saveNow({ force: true });
         renderMetaLine();
         renderCrumb();
-        U.toast('设定已更新，第一次保存时会按这个位置建档', 'check');
-        return;
+        return saved;
       }
-      I.dirty = true;
-      await saveNow({ force: true });
-      if (I.docId) {
-        const rec = D.get(I.docId);
-        if (rec) I.article = Object.assign({}, I.article, rec, { html: $('#immBody').innerHTML });
-      }
-      renderMetaLine();
-      renderCrumb();
-    };
+    });
   }
 
   /* ---------------- navigation ---------------- */
@@ -677,6 +1132,16 @@
     document.body.classList.remove('mode-imm', 'imm-focus', 'imm-type', 'imm-drawer-open');
     I.open = false;
     I.focus = false;
+    I.mode = 'article';
+    I.draftId = null;
+    I.draft = null;
+    I.nodeId = null;
+    I.projectId = null;
+    I.readOnly = false;
+    $('#immDraftbar').hidden = true;
+    $('#immNodebar').hidden = true;
+    $('#immTitle').readOnly = false;
+    $('#immBody').contentEditable = 'true';
     toggleDrawer(false);
     window.__gen6Editing = '';
   }
@@ -687,7 +1152,7 @@
     if (I.dirty) {
       const ok = await saveNow({ force: false });
       if (!ok) {
-        U.toast('还有内容没有存进文件，已保留在页面上', 'alert');
+        U.toast(I.mode === 'draft' ? '草稿还有内容没保存成功' : '还有内容没有存进文件，已保留在页面上', 'alert');
       }
     }
     closeUI();
@@ -695,7 +1160,8 @@
   }
 
   function goBack() {
-    const back = I.returnHash || '#/';
+    let back = I.returnHash;
+    if (!back) back = I.mode === 'draft' ? '#/drafts' : (I.projectId ? '#/w/' + encodeURIComponent(I.projectId) : '#/');
     if (location.hash === back) {
       leave().then(() => window.App.route());
     } else {
@@ -728,13 +1194,49 @@
     else location.hash = target;
   }
 
+  function openDraft(id, options) {
+    const opts = options || {};
+    const fromHash = location.hash && !/^#\/draft(?:s|\/)/.test(location.hash) ? location.hash : '';
+    I.returnHash = opts.returnTo != null ? opts.returnTo : (fromHash || sessionStorage.getItem('ws.draftReturn') || '#/drafts');
+    const target = draftPath(id);
+    if (location.hash === target && I.open) { mountDraft(id); return; }
+    if (location.hash === target) window.App.route();
+    else location.hash = target;
+  }
+
+  function openNode(nodeId, projectId, options) {
+    const opts = options || {};
+    I.returnHash = opts.returnTo != null ? opts.returnTo : (location.hash || '#/');
+    const target = nodePath(nodeId, projectId);
+    if (location.hash === target && I.open) { mountNode(nodeId, projectId, opts); return; }
+    if (location.hash === target) window.App.route();
+    else location.hash = target;
+  }
+
   function enterFromRoute() {
     const { path, query } = splitHash();
+    const nodeId = query.get('node');
+    if (nodeId) {
+      if (!I.returnHash) I.returnHash = '#/';
+      const projectId = query.get('project') || '';
+      if (I.open && I.mode === 'node' && I.nodeId === nodeId && (!projectId || I.projectId === projectId)) return;
+      if (I.open && I.mode === 'article' && I.nodeId === nodeId) return;
+      mountNode(nodeId, projectId);
+      return;
+    }
+    const draftMatch = path.match(/^\/draft\/([^/]+)$/);
+    if (draftMatch && draftMatch[1] !== 'new') {
+      if (!I.returnHash) I.returnHash = sessionStorage.getItem('ws.draftReturn') || '#/drafts';
+      const draftId = safeDecode(draftMatch[1]);
+      if (I.open && I.mode === 'draft' && I.draftId === draftId) return;
+      mountDraft(draftId);
+      return;
+    }
     const match = path.match(/^\/write(?:\/(.+))?$/);
     if (!match) return;
     if (!I.returnHash) I.returnHash = '#/';
     const id = match[1] ? safeDecode(match[1]) : '';
-    if (I.open && ((id && id === I.docId) || (!id && !I.docId))) return;
+    if (I.open && I.mode === 'article' && ((id && id === I.docId) || (!id && !I.docId))) return;
     mount(id || null, { query });
   }
 
@@ -780,6 +1282,69 @@
     sel.addRange(range);
   }
 
+  function insertPlainText(text) {
+    const bodyEl = $('#immBody');
+    if (!bodyEl || !I.open || !text) return false;
+    let sel = window.getSelection();
+    const inBody = sel && sel.rangeCount && bodyEl.contains(sel.getRangeAt(0).startContainer);
+    if (!inBody) {
+      bodyEl.focus();
+      caretToEnd(bodyEl);
+      sel = window.getSelection();
+    }
+    if (!sel || !sel.rangeCount) return false;
+    let ok = false;
+    try { ok = document.execCommand('insertText', false, text); } catch (e) { ok = false; }
+    if (!ok) {
+      const range = sel.getRangeAt(0);
+      range.deleteContents();
+      const frag = document.createDocumentFragment();
+      String(text).replace(/\r\n?/g, '\n').split('\n').forEach((line, i) => {
+        if (i) frag.appendChild(document.createElement('br'));
+        frag.appendChild(document.createTextNode(line));
+      });
+      const last = frag.lastChild;
+      range.insertNode(frag);
+      if (last) {
+        const after = document.createRange();
+        after.setStartAfter(last);
+        after.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(after);
+      }
+      bodyEl.dispatchEvent(new Event('input', { bubbles: true }));
+      ok = true;
+    }
+    return ok;
+  }
+
+  async function pasteFromClipboard() {
+    if (!I.open) return;
+    if (I.readOnly) {
+      U.toast('这是只读快照，继续写请先打开文章', 'lock');
+      return;
+    }
+    const bodyEl = $('#immBody');
+    if (!navigator.clipboard || !navigator.clipboard.readText) {
+      U.toast('这个浏览器要长按正文或按 Ctrl+V 粘贴', 'info');
+      if (bodyEl) bodyEl.focus();
+      return;
+    }
+    let text = '';
+    try {
+      text = await navigator.clipboard.readText();
+    } catch (error) {
+      U.toast('浏览器没有允许读取剪贴板，请长按正文或按 Ctrl+V', 'alert');
+      if (bodyEl) bodyEl.focus();
+      return;
+    }
+    if (!text) {
+      U.toast('剪贴板里没有可粘贴的文字', 'info');
+      return;
+    }
+    if (insertPlainText(text)) U.toast('已粘贴到光标处', 'check');
+  }
+
   function typewriterFollow() {
     if (!I.typewriter || !I.open) return;
     const stage = $('#immStage');
@@ -794,6 +1359,28 @@
     if (delta > box.height * 0.12 || delta < -box.height * 0.3) {
       stage.scrollTop += delta;
     }
+  }
+
+  function toggleFocus(force) {
+    I.focus = typeof force === 'boolean' ? force : !I.focus;
+    document.body.classList.toggle('imm-focus', I.focus);
+    U.toast(I.focus ? '专注模式 · 右上角可退出' : '已退出专注', I.focus ? 'eye' : 'layout');
+  }
+
+  function toggleTypewriter(force) {
+    I.typewriter = typeof force === 'boolean' ? force : !I.typewriter;
+    window.lsSet('6.typewriter', I.typewriter);
+    document.body.classList.toggle('imm-type', I.typewriter);
+    U.toast(I.typewriter ? '打字机模式：光标保持居中' : '已关闭打字机模式', 'type');
+    if (I.typewriter) typewriterFollow();
+  }
+
+  function mobileViewItems() {
+    if (!U.isMobile()) return [];
+    return [
+      { label: '专注模式：' + (I.focus ? '开' : '关'), icon: 'eye', fn: () => toggleFocus() },
+      { label: '打字机模式：' + (I.typewriter ? '开' : '关'), icon: 'type', fn: () => toggleTypewriter() }
+    ];
   }
 
   function markdownShortcut(e) {
@@ -848,9 +1435,13 @@
       scheduleSave(900);
     });
     bodyEl.addEventListener('paste', (e) => {
+      const cd = e.clipboardData || window.clipboardData;
+      let text = cd ? cd.getData('text/plain') : '';
+      const html = cd ? cd.getData('text/html') : '';
+      if (!text && html) text = U.htmlToText(html);
+      if (!text) return;
       e.preventDefault();
-      const text = (e.clipboardData || window.clipboardData).getData('text/plain');
-      document.execCommand('insertText', false, text);
+      insertPlainText(text);
     });
     bodyEl.addEventListener('keydown', (e) => {
       if (e.isComposing) return;
@@ -889,23 +1480,17 @@
     });
 
     $('#immBack').onclick = goBack;
+    const focusExit = $('#immFocusExit');
+    if (focusExit) focusExit.onclick = () => toggleFocus(false);
 
     $$('#immApp [data-imm]').forEach((btn) => {
       btn.onclick = async () => {
         const act = btn.getAttribute('data-imm');
         if (act === 'files') toggleDrawer();
         else if (act === 'meta') openMetaModal();
-        else if (act === 'focus') {
-          I.focus = !I.focus;
-          document.body.classList.toggle('imm-focus', I.focus);
-          U.toast(I.focus ? '专注模式 · Esc 退出' : '已退出专注', I.focus ? 'eye' : 'layout');
-        } else if (act === 'type') {
-          I.typewriter = !I.typewriter;
-          window.lsSet('6.typewriter', I.typewriter);
-          document.body.classList.toggle('imm-type', I.typewriter);
-          U.toast(I.typewriter ? '打字机模式：光标保持居中' : '已关闭打字机模式', 'type');
-          if (I.typewriter) typewriterFollow();
-        } else if (act === 'map') {
+        else if (act === 'focus') toggleFocus();
+        else if (act === 'type') toggleTypewriter();
+        else if (act === 'map') {
           if (I.dirty) await saveNow({ force: false });
           if (!I.docId) { U.toast('先写一点内容，保存后再进导图', 'info'); return; }
           window.Gen6Bridge.openInMap(I.docId);
@@ -917,8 +1502,71 @@
       };
     });
 
+    const draftPublish = $('#immDraftPublish');
+    if (draftPublish) draftPublish.onclick = () => publishCurrentDraft();
+    const draftContinue = $('#immDraftContinue');
+    if (draftContinue) {
+      draftContinue.onclick = () => {
+        if (!I.draft || !I.draft.publishedId) return;
+        openDoc(I.draft.publishedId, { returnTo: '#/drafts' });
+      };
+    }
+
     $('#immMore').onclick = (e) => {
       const fcOn = !!(window.FocusCursor && window.FocusCursor.state.enabled);
+      if (I.mode === 'draft') {
+        const draftItems = [
+          { head: '草稿 · ' + ((I.draft && I.draft.title) || '无题') },
+          I.readOnly
+            ? { label: '继续写这篇文章', icon: 'feather', fn: () => openDoc(I.draft.publishedId, { returnTo: '#/drafts' }) }
+            : { label: '收入文库', icon: 'book', fn: publishCurrentDraft },
+          { label: '本机版本', icon: 'history', fn: openDraftVersions },
+          { label: '下载 Markdown', icon: 'download', fn: async () => {
+            if (!I.readOnly) await saveDraftNow({ force: true });
+            const draft = I.draft || {};
+            const title = titleEl.value.trim() || draft.title || '无题';
+            U.download(title.replace(/[\\/:*?"<>|]/g, '_') + '.md', '# ' + title + '\n\n' + (draft.markdown || ''), 'text/markdown');
+            U.toast('Markdown 已开始下载', 'download');
+          } },
+          { label: '复制正文', icon: 'note', fn: () => { U.copyText(U.htmlToText(bodyEl.innerHTML)); U.toast('正文已复制'); } },
+          { sep: true },
+          { label: '写作光标：' + (fcOn ? '开' : '关'), icon: 'quill', fn: () => {
+            if (!window.FocusCursor) return;
+            const next = !window.FocusCursor.state.enabled;
+            window.FocusCursor.toggle(next);
+            U.toast(next ? '写作光标已启用：只有当前段落保持清晰' : '已关闭写作光标', next ? 'eye' : 'x');
+          } },
+          ...mobileViewItems(),
+          { sep: true },
+          { label: '删除草稿', icon: 'trash', danger: true, fn: deleteCurrentDraft }
+        ];
+        if (!I.readOnly) draftItems.splice(5, 0, { label: '粘贴正文', icon: 'paste', fn: pasteFromClipboard });
+        window.Writer.popMenu(e.currentTarget, draftItems, 230);
+        return;
+      }
+      if (I.mode === 'node') {
+        const nodeItems = [
+          { head: '写作台章节' },
+          { label: '下载 Markdown', icon: 'download', fn: () => {
+            const title = titleEl.value.trim() || '无题';
+            U.download(title.replace(/[\\/:*?"<>|]/g, '_') + '.md', '# ' + title + '\n\n' + U.htmlToMarkdown(bodyEl.innerHTML), 'text/markdown');
+            U.toast('Markdown 已开始下载', 'download');
+          } },
+          { label: '复制正文', icon: 'note', fn: () => { U.copyText(U.htmlToText(bodyEl.innerHTML)); U.toast('正文已复制'); } },
+          { label: '粘贴正文', icon: 'paste', fn: pasteFromClipboard },
+          { label: '写作光标：' + (fcOn ? '开' : '关'), icon: 'quill', fn: () => {
+            if (!window.FocusCursor) return;
+            const next = !window.FocusCursor.state.enabled;
+            window.FocusCursor.toggle(next);
+            U.toast(next ? '写作光标已启用：只有当前段落保持清晰' : '已关闭写作光标', next ? 'eye' : 'x');
+          } },
+          ...mobileViewItems(),
+          { sep: true },
+          { label: '回到写作台', icon: 'tree', fn: () => { location.hash = '#/w/' + encodeURIComponent(I.projectId || ''); } }
+        ];
+        window.Writer.popMenu(e.currentTarget, nodeItems, 230);
+        return;
+      }
       const items = [
         { head: '当前文章' },
         { label: '导出 Markdown', icon: 'download', fn: () => {
@@ -927,12 +1575,14 @@
           U.toast('Markdown 已开始下载', 'download');
         } },
         { label: '复制正文', icon: 'note', fn: () => { U.copyText(U.htmlToText(bodyEl.innerHTML)); U.toast('正文已复制'); } },
+        { label: '粘贴正文', icon: 'paste', fn: pasteFromClipboard },
         { label: '写作光标：' + (fcOn ? '开' : '关'), icon: 'quill', fn: () => {
           if (!window.FocusCursor) return;
           const next = !window.FocusCursor.state.enabled;
           window.FocusCursor.toggle(next);
           U.toast(next ? '写作光标已启用：只有当前段落保持清晰' : '已关闭写作光标', next ? 'eye' : 'x');
         } },
+        ...mobileViewItems(),
         { sep: true },
         { label: '新建一篇（同位置）', icon: 'plus', fn: newFromDrawer },
         { label: '文章目录', icon: 'folder', fn: () => toggleDrawer(true) },
@@ -984,11 +1634,13 @@
     I.typewriter = !!window.lsGet('6.typewriter', false);
     buildTypeSelect();
     bindEditor();
+    bindBars();
     bindKeys();
     updateCount();
     window.Immersive = {
-      enterFromRoute, openDoc, openNew, leave, flush, isOpen: () => I.open, closeUI,
+      enterFromRoute, openDoc, openNew, openDraft, openNode, leave, flush, isOpen: () => I.open, closeUI,
       get docId() { return I.docId; },
+      get mode() { return I.mode; },
       get dirty() { return I.dirty; }
     };
   }
